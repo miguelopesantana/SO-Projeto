@@ -4,6 +4,31 @@ int main(int argc, char *argv[]){
 
 	if(!readFile(fp, users, markets)) printf("Config file read correctly.\n");
     else printf("Error reading config file.\n");
+    
+    //Criar o processo Task Manager
+    if (fork() == 0) {
+            TaskManager();
+             exit(0);
+    }else{
+            wait(NULL);
+        }
+    //Criar o processo Maintenance Manager
+    if (fork() == 0) {
+            MaintenanceManager();
+            exit(0);
+    }else{
+            wait(NULL);
+        }
+
+    //Criar o processo Monitor 
+    if (fork() == 0) {
+            Monitor();
+            exit(0);
+    }else{
+            wait(NULL);
+        }
+
+
 
     return 0;
 }
@@ -129,5 +154,19 @@ int CreateNamedPipe(){
         write(fd, arr2, strlen(arr2) + 1);
         close(fd);
     }
+
+}
+//Função Task Manager
+int TaskManager(){
+   
+}
+
+//Função Maintenance Manager 
+int MaintenanceManager(){
+
+}
+
+//Função Monitor
+int Monitor(){
 
 }
