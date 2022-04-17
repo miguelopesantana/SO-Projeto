@@ -26,6 +26,13 @@ typedef struct memory {
 
 } Data;
 
+struct tarefa {
+    int num_pedidos;
+    int time_betw_tasks;
+    int num_tasks;
+    int max_time;
+}
+
 //struct with server's information
 typedef struct server {
     char name[256];
@@ -34,7 +41,7 @@ typedef struct server {
 
 } EdgeServer;
 
-
+Task *tasks;
 Data *shared_data;
 sem_t * mutex_log;
 sem_t * mutex_write;
