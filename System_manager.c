@@ -132,29 +132,12 @@ void iniciar() {
     sem_post(mutex_log);//unlocks the semaphore
 }
 //Processo que gera tarefas com um determinado nº de milhares de instruções a executar num intervalo de tempo
+//Cria o named pipe onde os processos criados anteriormente irão escrever
 int MobileNode(){
 
 }
-//Cria o named pipe onde os processos criados anteriormente irão escrever
-int CreateNamedPipe(){
-    int fd;
-    char * namedPipe = "C:/Users/guifa/Universidade/SO/Projeto_SO/TASK_PIPE";
 
-    mkfifo(namedPipe, 0666);
 
-    char arr1[80], arr2[80];
-
-    while(1){
-
-        fd = open(namedPipe, O_WRONLY);
-
-        fgets(arr2, 80, stdin);
-
-        write(fd, arr2, strlen(arr2) + 1);
-        close(fd);
-    }
-
-}
 //Função Task Manager
 int TaskManager(){
    
@@ -168,4 +151,39 @@ int MaintenanceManager(){
 //Função Monitor
 int Monitor(){
 
+}
+
+
+void *vCPU(void* idp) {
+    pthread_mutex_lock(&shared_data->mutex);
+    int my_id = *((int *)idp);
+
+    sem_wait(mutex_log);
+    escreverLog("vCPU CREATED SUCCESSFULLY");
+    sem_post(mutex_log);
+
+    //printf("      carro %d | equipa: %d\n", my_id,getpid());
+    pthread_mutex_unlock(&shared_data->mutex);
+    pthread_exit(NULL);
+    return NULL;
+}
+
+int EdgeServer(){
+    //criar vCpus (threads)
+    for (int i = 0; i < shared_data -> num_servers; i++) {
+        sem_wait(mutex_write);
+        shared_data -> servers[i] = i;
+        sem_post(mutex_write);
+
+        pthread_create(&my_thread[i], NULL, carro, &shared_data -> servers[i]);
+        
+        sem_wait(mutex_write);
+        shared_data -> count++;
+        sem_post(mutex_write);
+    } 
+
+    //waits for threads to die
+    for (int i = 0; i < shared_data -> num_servers; i++) {
+        pthread_join(my_thread[shared_data -> count - shared_data -> num_servers + i], NULL);
+    }   
 }

@@ -46,3 +46,4 @@ Data *shared_data;
 sem_t * mutex_log;
 sem_t * mutex_write;
 int shmid;
+pthread_t my_thread[N];
