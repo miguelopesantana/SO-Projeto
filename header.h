@@ -1,9 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <string.h>
 #include <errno.h>
 #include <semaphore.h>
 #include <sys/wait.h>
@@ -26,7 +26,7 @@ typedef struct memory {
 
 } Data;
 
-struct tarefa {
+struct task {
     int num_pedidos;
     int time_betw_tasks;
     int num_tasks;

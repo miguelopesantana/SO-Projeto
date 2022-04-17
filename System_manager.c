@@ -1,6 +1,12 @@
 #include "header.h"
 
+int main(int argc, char *argv[]){
 
+	if(!readFile(fp, users, markets)) printf("Config file read correctly.\n");
+    else printf("Error reading config file.\n");
+
+    return 0;
+}
 
 void escreverLog(char mensagem[]) {
     time_t t = time(NULL);
@@ -12,9 +18,13 @@ void escreverLog(char mensagem[]) {
     fclose(f);
 }
 
-int lerFicheiro() { 
+int readFicheiro() { 
 
-    FILE *file;
+    FILE *fp = fopen("config.txt", "r");
+    if(fp == NULL){
+        printf("Error: could not open file %s\n", argv[1]);
+        return 1;
+    }
 
     char line[SIZE];
     int i = 0;
