@@ -28,8 +28,6 @@ int main(int argc, char *argv[]){
             wait(NULL);
         }
 
-
-
     return 0;
 }
 
@@ -58,6 +56,7 @@ int readFicheiro() {
     char s[3] = ", ";
 
     // Abertura do ficheiro "input.txt" para leitura
+    FILE *file;
     file = fopen("input.txt", "r");
 
     // ficheiro não encontrado

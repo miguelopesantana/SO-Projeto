@@ -1,7 +1,7 @@
 #include "header.h"
 
 int main(int argc, char *argv[]){
-    struct tarefa Task;
+    struct tasks;
 
     //ler o comando do user
     //guardar os elementos do comando e guardar na struct
