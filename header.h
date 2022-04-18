@@ -40,6 +40,7 @@ typedef struct server_struct {
     char* name[MIN_LEN];
     int vCPU1;
     int vCPU2;
+    int serverID;
 } Server;
 
 typedef struct shm_struct {
@@ -47,15 +48,17 @@ typedef struct shm_struct {
     int max_wtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
     int num_servers; //Número de Edge Servers
     Server* servers[]; //array of servers
-    ServerStatus status;
+    ServerStatus status; //Flag to indicate if the server is running or not
+    pthread_mutex_t mutex; //mutex to control access to shared data
 } Data;
 
-struct task {
+typedef struct task_struct {
     int num_pedidos;
     int time_betw_tasks;
     int num_tasks;
     int max_time;
-}
+    int ID;
+} Task;
 
 
 Task *tasks;

@@ -121,15 +121,9 @@ void initSim(){
         exit(1);
     }
 
-    sem_unlink("MUTEX_LOG");                                      // remove o nome do semáforo
-    mutex_log = sem_open("MUTEX_LOG", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
+    create_sem();
 
-    sem_unlink("MUTEX_WRITE");                                        // remove o nome do semáforo
-    mutex_write = sem_open("MUTEX_WRITE", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
-
-    sem_wait(mutex_log); // locks the semaphore
     addLog("OFFLOAD SIMULATOR STARTING");
-    sem_post(mutex_log); // unlocks the semaphore
 }
 
 //function to create a fork and execute the function with arguments
@@ -142,18 +136,75 @@ void initProc(void (*function)(), void *arg){
     }
 }
 
+void create_sem(){
+    sem_unlink("MUTEX_LOG");                                      // remove o nome do semáforo
+    mutex_log = sem_open("MUTEX_LOG", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
+
+    sem_unlink("MUTEX_WRITE");                                        // remove o nome do semáforo
+    mutex_write = sem_open("MUTEX_WRITE", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
+
+    if(mutex_log = SEM_FAILED){
+        addLog("ERRO NA CRIAÇÃO DO SEMÁFORO LOG");
+    }
+    if(mutex_write = SEM_FAILED){
+        addLog("ERRO NA CRIAÇÃO DO SEMÁFORO WRITE");
+    }
+
+}
+
+int EdgeServer(int l){
+    
+    shared_data->servers[l].serverID = getpid();
+    char string[MAX_LEN];
+    sprintf(string, "%s READY\n", shared_data->servers[l].name);
+    /*
+    sem_wait(mutex_write);
+    shared_data->servers.name = name;
+    shared_data->servers.vCPU1 = vCPU1;
+    shared_data->servers.vCPU2 = vCPU2;
+    sem_post(mutex_write);
+    */
+    //create threads for vCPUs
+    for (int j = 0; j < 2; j++){
+        pthread_create(&shared_data->servers[i].vcpus[j], NULL, thread_vcpu, NULL);
+    }
+
+    // waits for threads to die
+    for (int i = 0; i < 2; i++){
+        pthread_join(&shared_data->servers[l].vcpus[i], NULL);
+    }
+    exit(0);
+}
+
+void * thread_scheduler(){
+
+    pthread_exit(NULL);
+    return NULL;
+}
+
+void * thread_dispatcher(){
+    pthread_exit(NULL);
+    return NULL;
+}
+
+void * thread_vcpu(){
+    pthread_exit(NULL);
+    return NULL;
+}
+
 int error(char *title, char *message){
     addLog("[ERROR] %s: %s\n", title, message);
     return 1;
 }
 
 void addLog(char mensagem) {
+    FILE *file = fopen("log.txt","a");
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
-
-    FILE *file = fopen("log.txt","a");
+    sem_wait(mutex_log);
     printf("%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
     fprintf(file, "%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
+    sem_post(mutex_log);
     fclose(file);
 }
 
