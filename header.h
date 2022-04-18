@@ -18,9 +18,15 @@
 
 int readFile();
 
+void initSim();
+
+void initProc(void (*function)(), void *arg);
+
 int error(char* title, char* message);
 
 void addLog(char* mensagem);
+
+typedef enum server_status { HIGHPERF, NORMAL, STOPPED} ServerStatus;
 
 typedef struct config_struct {
     int num_slots; //Número de slots na fila interna do Task Manager
@@ -36,14 +42,12 @@ typedef struct server_struct {
     int vCPU2;
 } Server;
 
-typedef struct memory {
+typedef struct shm_struct {
     int num_slots; //Número de slots na fila interna do Task Manager
     int max_wtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
     int num_servers; //Número de Edge Servers
     Server* servers[]; //array of servers
-
-    pthread_mutex_t mutex;
-
+    ServerStatus status;
 } Data;
 
 struct task {

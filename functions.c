@@ -18,10 +18,10 @@ int readFile(){
             if (num <= 0){
                 switch (i){
                     case 0:
-                        error("Config error", "Invalid number of queue slots");
+                        error("Config File", "Invalid number of queue slots");
                         break;
                     case 1:
-                        error("Config error", "Invalid max waiting time");
+                        error("Config File", "Invalid max waiting time");
                         break;
                     }
                 fclose(file);
@@ -37,7 +37,7 @@ int readFile(){
                     }
             }
         }else{
-            error("Config error", "Config file structure error");
+            error("Config File", "Config file structure error");
             fclose(file);
             exit(1);
         }
@@ -46,12 +46,12 @@ int readFile(){
     if (fgets(buffer, MIN_LEN, file)) {
         num = atoi(buffer);
         if (num <= 2) {
-            error("Config error", "Invalid number edge server (must be >=2)");
+            error("Config File", "Invalid number edge server (must be >=2)");
             fclose(file);
             exit(1);
         } else Configs.num_servers = num;
     } else {
-        error("Config error", "Config file structure error");
+        error("Config File", "Config file structure error");
         fclose(file);
         exit(1);
     }
@@ -75,12 +75,12 @@ int readFile(){
                 if(j==1)Configs.servers[i].vCPU2 = atoi(token);                
             }
             if (error) {
-                error("Config error", "Server atribute's structure error");
+                error("Config File", "Server atribute's structure error");
                 fclose(file);
                 exit(1);
             }            
         } else {
-            error("Config error", "Config file structure error");
+            error("Config File", "Config file structure error");
             fclose(file);
             exit(1);
         }
@@ -90,8 +90,60 @@ int readFile(){
     return 0;
 }
 
+void initSim(){
+
+    // remove ficheiro log, caso exista
+    remove("log.txt");
+    
+    //internet example
+    shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
+    if (shmid == -1) {
+        perror("Shared memory");
+        return 1;
+    }
+    
+
+    // create shared memory
+    if ((shmid = shmget(IPC_PRIVATE, sizeof(Data), IPC_CREAT | 0700)) < 0){
+        error("SHM creation", "Error in shmget with IPC_CREAT\n");
+        exit(1);
+    }
+
+    //internet example
+    shmp = shmat(shmid, NULL, 0);
+    if (shmp == (void *) -1) {
+        perror("Shared memory attach");
+        return 1;
+    }
+    // Attach shared memory
+    if ((shared_data = (Data *)shmat(shmid, NULL, 0)) == (Data *)-1){
+        perror("Shmat error.\n");
+        exit(1);
+    }
+
+    sem_unlink("MUTEX_LOG");                                      // remove o nome do semáforo
+    mutex_log = sem_open("MUTEX_LOG", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
+
+    sem_unlink("MUTEX_WRITE");                                        // remove o nome do semáforo
+    mutex_write = sem_open("MUTEX_WRITE", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
+
+    sem_wait(mutex_log); // locks the semaphore
+    addLog("OFFLOAD SIMULATOR STARTING");
+    sem_post(mutex_log); // unlocks the semaphore
+}
+
+//function to create a fork and execute the function with arguments
+void initProc(void (*function)(), void *arg){
+    if (fork() == 0){
+        function(arg);
+        exit(0);
+    }else{
+        wait(NULL);
+    }
+}
+
 int error(char *title, char *message){
-    addLog("%s: %s\n", title, message);
+    addLog("[ERROR] %s: %s\n", title, message);
     return 1;
 }
 
@@ -104,3 +156,4 @@ void addLog(char mensagem) {
     fprintf(file, "%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
     fclose(file);
 }
+
