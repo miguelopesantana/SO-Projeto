@@ -29,8 +29,12 @@ int MobileNode()
 }
 
 // Função Task Manager
-int TaskManager()
-{
+
+int TaskManager(){
+    //create Edge Server processes
+    for (int i = 0; i < Configs.num_servers; i++){
+        initProc(EdgeServer, &Configs.servers[i]);
+    }
 }
 
 // Função Maintenance Manager
@@ -52,31 +56,34 @@ void *vCPU(void *idp)
     addLog("vCPU CREATED SUCCESSFULLY");
     sem_post(mutex_log);
 
-    // printf("      carro %d | equipa: %d\n", my_id,getpid());
     pthread_mutex_unlock(&shared_data->mutex);
     pthread_exit(NULL);
     return NULL;
 }
 
-int EdgeServer()
-{
+int EdgeServer(char* name, int vCPU1, int vCPU2)){
+    pthread_t vCPU;
+    sem_wait(mutex_write);
+    shared_data->servers.name = name;
+    shared_data->servers.vCPU1 = vCPU1;
+    shared_data->servers.vCPU2 = vCPU2;
+    sem_post(mutex_write);
+    //copilot's version
+    //create threads for vCPUs
+    for (int i = 0; i < 2; i++){
+        pthread_create(&vCPU, NULL, vCPU, &i);
+    }
+
+
+    //Filipe's version
     // criar vCpus (threads)
-    for (int i = 0; i < shared_data->num_servers; i++)
-    {
-        sem_wait(mutex_write);
-        shared_data->servers[i] = i;
-        sem_post(mutex_write);
-
-        pthread_create(&my_thread[i], NULL, carro, &shared_data->servers[i]);
-
-        sem_wait(mutex_write);
-        shared_data->count++;
-        sem_post(mutex_write);
+    for (int i = 0; i < 2; i++){
+    
+        pthread_create(&vCPU, NULL, , &shared_data->servers[i]);
     }
 
     // waits for threads to die
-    for (int i = 0; i < shared_data->num_servers; i++)
-    {
+    for (int i = 0; i < shared_data->num_servers; i++){
         pthread_join(my_thread[shared_data->count - shared_data->num_servers + i], NULL);
     }
 }
