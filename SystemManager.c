@@ -1,4 +1,4 @@
-#include "header.h"
+#include "SM_header.h"
 
 int main(int argc, char *argv[]){
     
