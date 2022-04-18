@@ -12,7 +12,6 @@
 #include <sys/fcntl.h>
 #include "functions.c"
 
-#define N 10
 #define MIN_LEN 64
 #define MAX_LEN 1024
 
@@ -50,17 +49,7 @@ typedef struct shm_struct {
     ServerStatus status;
 } Data;
 
-struct task {
-    int num_pedidos;
-    int time_betw_tasks;
-    int num_tasks;
-    int max_time;
-}
-
-
-Task *tasks;
 Data *shared_data;
 sem_t * mutex_log;
 sem_t * mutex_write;
 int shmid;
-pthread_t my_thread[N];
