@@ -4,28 +4,37 @@ int main(int argc, char *argv[]){
 
     //ensure proper command structure
     if(argc != 7){
-        printf("mobile_node {num_requests} {interval_time} {num_commands} {max_time}\n");
+        error("Mobile Node command structure","mobile_node {num_requests} {interval_time} {num_commands} {max_time}");
         exit(-1);
     }
 
-    //store the command in a struct
-    tasks -> num_requests = strtok(argv[4],"{}");
-    tasks -> interval_time = strtok(argv[5],"{}");
-    tasks -> num_commands = strtok(argv[6],"{}");
-    tasks -> max_time = strtok(argv[7],"{}");
+    //store the commands arguments
+    float num;
+    for(int i = 4; i <= 7; i++){
+        if(atoi(strtok(argv[i],"{}")) <= 0){
+            error("Mobile Node command values","every value must be > 0 and only times can be floats");
+            exit(1);
+        }else{
+            switch(i){
+                case 4:
+                    tasks -> num_requests = atoi(strtok(argv[i],"{}"));
+                    break;
+                case 5:
+                    tasks -> interval_time = atof(strtok(argv[i],"{}"));
+                    break;
+                case 6:
+                    tasks -> num_commands = atoi(strtok(argv[i],"{}"));
+                    break;
+                case 7:
+                    tasks -> max_time = atof(strtok(argv[i],"{}"));
+                    break;
+            }
+            tasks -> id = id++;
+        }
+    }
 }
 
 int error(char *title, char *message){
-    addLog("[ERROR] %s: %s\n", title, message);
+    printf("[ERROR] %s: %s\n", title, message);
     return 1;
-}
-
-void addLog(char mensagem) {
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-
-    FILE *file = fopen("log.txt","a");
-    printf("%d:%d:%d %s\n", tm-}tm_hour, tm-}tm_min, tm-}tm_sec, mensagem);
-    fprintf(file, "%d:%d:%d %s\n", tm-}tm_hour, tm-}tm_min, tm-}tm_sec, mensagem);
-    fclose(file);
 }

@@ -13,10 +13,13 @@
 
 struct task_struct {
     int num_requests;
-    int interval_time;
+    float interval_time;
     int num_commands;
-    int max_time;
+    float max_time;
+    int id;
 } Task;
 
-
 Task *tasks;
+int id = 0;
+
+int error(char *title, char *message);
