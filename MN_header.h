@@ -11,7 +11,7 @@
 #include <pthread.h>
 #include <sys/fcntl.h>
 
-struct task_struct {
+typedef struct task_struct {
     int num_requests;
     float interval_time;
     int num_commands;
