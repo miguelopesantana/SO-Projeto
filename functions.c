@@ -99,8 +99,8 @@ void addLog(char mensagem) {
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
 
-    FILE *f = fopen("log.txt","a");
+    FILE *file = fopen("log.txt","a");
     printf("%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
-    fprintf(f, "%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
-    fclose(f);
+    fprintf(file, "%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
+    fclose(file);
 }

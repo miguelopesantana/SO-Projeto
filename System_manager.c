@@ -69,7 +69,7 @@ void iniciar(){
     mutex_write = sem_open("MUTEX_WRITE", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
 
     sem_wait(mutex_log); // locks the semaphore
-    escreverLog("OFFLOAD SIMULATOR STARTING");
+    addLog("OFFLOAD SIMULATOR STARTING");
     sem_post(mutex_log); // unlocks the semaphore
 }
 
@@ -100,7 +100,7 @@ void *vCPU(void *idp)
     int my_id = *((int *)idp);
 
     sem_wait(mutex_log);
-    escreverLog("vCPU CREATED SUCCESSFULLY");
+    addLog("vCPU CREATED SUCCESSFULLY");
     sem_post(mutex_log);
 
     // printf("      carro %d | equipa: %d\n", my_id,getpid());
