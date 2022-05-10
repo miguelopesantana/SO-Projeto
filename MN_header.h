@@ -22,4 +22,6 @@ typedef struct task_struct {
 Task *tasks;
 int id = 0;
 
+
+
 int error(char *title, char *message);

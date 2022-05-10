@@ -31,20 +31,18 @@ typedef struct config_struct {
     int num_slots; //Número de slots na fila interna do Task Manager
     int max_wtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
     int num_servers; //Número de Edge Servers
-    Server* servers; //array of servers
 } Config;
 
 //struct with server's information
 typedef struct server_struct {
     char* name[MIN_LEN];
-    int vCPU1;
-    int vCPU2;
+    int vCPU[2];
     int serverID;
 } Server;
 
 typedef struct shm_struct {
     int num_slots; //Número de slots na fila interna do Task Manager
-    int max_wtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
+    int max_wwtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
     int num_servers; //Número de Edge Servers
     Server* servers[]; //array of servers
     ServerStatus status; //Flag to indicate if the server is running or not
@@ -59,9 +57,10 @@ typedef struct task_struct {
     int ID;
 } Task;
 
+Server* servers; //array of servers
 
 Task *tasks;
 Data *shared_data;
 sem_t * mutex_log;
 sem_t * mutex_write;
-int shmid;
+int shmid;C:\UC\2º Ano\2º Semestre\Shared Folder\RC\Projeto RC\Intermédio

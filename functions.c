@@ -94,14 +94,6 @@ void initSim(){
 
     // remove ficheiro log, caso exista
     remove("log.txt");
-    
-    //internet example
-    shmid = shmget(SHM_KEY, sizeof(struct shmseg), 0644|IPC_CREAT);
-    if (shmid == -1) {
-        perror("Shared memory");
-        return 1;
-    }
-    
 
     // create shared memory
     if ((shmid = shmget(IPC_PRIVATE, sizeof(Data), IPC_CREAT | 0700)) < 0){
@@ -109,12 +101,6 @@ void initSim(){
         exit(1);
     }
 
-    //internet example
-    shmp = shmat(shmid, NULL, 0);
-    if (shmp == (void *) -1) {
-        perror("Shared memory attach");
-        return 1;
-    }
     // Attach shared memory
     if ((shared_data = (Data *)shmat(shmid, NULL, 0)) == (Data *)-1){
         perror("Shmat error.\n");
