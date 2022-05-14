@@ -10,6 +10,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <sys/fcntl.h>
+#define PIPE_NAME "TASK_PIPE"
 
 typedef struct task_struct {
     int num_requests;

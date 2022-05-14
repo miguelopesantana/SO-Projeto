@@ -1,4 +1,4 @@
-#include "header.h"
+#include "SM_header.h"
 
 int readFile(){
 
@@ -122,71 +122,340 @@ void initProc(void (*function)(), void *arg){
     }
 }
 
-void create_sem(){
-    sem_unlink("MUTEX_LOG");                                      // remove o nome do semáforo
-    mutex_log = sem_open("MUTEX_LOG", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
 
-    sem_unlink("MUTEX_WRITE");                                        // remove o nome do semáforo
-    mutex_write = sem_open("MUTEX_WRITE", O_CREAT | O_EXCL, 0700, 1); // retorna o endereço do novo semáforo
 
-    if(mutex_log = SEM_FAILED){
-        addLog("ERRO NA CRIAÇÃO DO SEMÁFORO LOG");
-    }
-    if(mutex_write = SEM_FAILED){
-        addLog("ERRO NA CRIAÇÃO DO SEMÁFORO WRITE");
+/*------------------------------------------ EDGE SERVER ------------------------------*/
+int EdgeServer(int edge_server_number){
+    
+    char buffer[100];
+
+    global_edge_server_number = edge_server_number;
+
+    //Colocar o cpu1 disponivel ao inicio
+    //não são necessários mecanismos de sincronização pois cada edge server acessa a ma zona diferente da memória
+    edge_server_list[glob_edge_server_number].available_vcpu[0] = 1;
+
+    //avisar maintenance manager que está a trabalhar
+    //colocar mensagem na message queue
+
+    pid_t es_pid = getpid();
+    msg rcv_msg;
+    rcv_msg.msgtype = global_edge_server_number + 1;
+    rcv_msg.msg_content = es_pid;
+    msgsnd(Shared_Memory->msqid, &rcv_msg, sizeof(rcv_msg) - sizeof(long), 0);
+
+    //Thread that controls the end of system
+    pthread_t monitor;
+    pthread_create(&monitor, NULL, MonitorEnd, 0);
+
+    //Log
+    snprintf(buf, sizeof(buf), "%s Ready", edge_server_lists[global_edge_server_number].name);
+    addLog(buf);
+
+    //work
+    char buffer[512];
+    int aval_cpu1,aval_cpu2;
+
+    args_cpu thread_args1;
+    thread_args1.cpu = 1
+
+    args_cpu thread_args2;
+    thread_args2.cpu = 2
+
+    while(1){
+        DoMaintenance(es_pid);
+
+        //read from pipe for buffer
+        read(edge_server_list[global_edge_server_number].pipe[0], buffer, 512);
+        pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+
+        //check performance mode
+        sem_wait(Shared_Memory->check_performance_mode);
+
+        if(Shared_Memory->all_performance_mode == 1){
+            sem_post(Shared_Memory->check_performance_mode);
+
+            //send to vCPU1
+            //set cpu as not available
+            edge_server_list[global_edge_server_number].available_vCPUs[0] = 0;
+            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+
+            //argumento para a thread
+            strcpy(thread_args1.task_buf, buffer);
+            pthread_create(&cpu_threads[0], NULL, vCPU, (void*) &thread_args1);
+
+            //wait for thread to die
+            pthread_join(cpu_threads[0], NULL);
+        }else if(Shared_Memory->all_performance_mode == 2){
+
+            sem_post(Shared_Memory->check_performance_mode);
+
+            //check both CPU's available state
+            aval_cpu1 = edge_server_list[edge_Server_number].available_vCPUs[0];
+            aval_cpu2 = edge_server_list[edge_Server_number].available_vCPUs[1];
+
+            if( (aval_cpu1 == 0) && (aval_cpu2 == 0)){ //nenhum CPU disponível
+
+                //só vêm tarefas para o server quando há cpus disponiveis
+                pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+                printf("EDGE SERVER %d error\n", global_edge_server_number);
+                exit(1);
+
+            }else if(aval_cpu2 == 1){ //cpu2 disponivel
+
+                //send to vCPU2
+                //set cpu as not available
+                edge_server_list[global_edge_server_number].available_vCPU[1] = 0;
+                pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+
+                //argumentos para a thread
+                strcpy(thread_args2.task_buf, buffer);
+                pthread_create(&cpu_threads[1], NULL, vCPU, (void *) &thread_args2);
+
+            }else if(aval_cpu1 == 1){ //cpu1 disponivel trocar para o 2 primeiro
+            
+                //send to vCPU1
+                //set cpu as not available
+                edge_server_list[global_edge_server_number].available_vCPU[0] = 0;
+                pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+
+                //argumentos para a thread
+                strcpy(thread_args1.task_buf, buffer);
+                pthread_create(&cpu_threads[0], NULL, vCPU. (void *) &thread_args1);
+            }
+
+        
+            //check if any thread ended meanwhile
+            // pthread_tryjoin_np(&cpu_threads[0],NULL);
+            // pthread_tryjoin_np(&cpu_threads[1],NULL);
+
+        }
+
     }
 
 }
 
-int EdgeServer(int l){
+/*------------------------ vCPU ----------------------------*/
+void * vCPU(void * arg){
+    args_cpu *t_args = (args_cpu*) arg;
     
-    shared_data->servers[l].serverID = getpid();
-    char string[MAX_LEN];
-    sprintf(string, "%s READY\n", shared_data->servers[l].name);
-    /*
-    sem_wait(mutex_write);
-    shared_data->servers.name = name;
-    shared_data->servers.vCPU1 = vCPU1;
-    shared_data->servers.vCPU2 = vCPU2;
-    sem_post(mutex_write);
-    */
-    //create threads for vCPUs
-    for (int j = 0; j < 2; j++){
-        pthread_create(&shared_data->servers[i].vcpus[j], NULL, thread_vcpu, NULL);
+    //split tasks arguments with strtok
+    char *tok, *rest;
+    int task_id, num_instructions;
+    
+    tok = strtok_r(t_args->task_bif, ";", &rest);
+    task_id = atoi(tok);
+
+    tok = strtok_r(NULL, ";", &rest);
+    num_instructions = atoi(tok);
+
+    //do work
+    if(t_args->cpu == 2){
+        usleep((int)(num_instructions / edge_server_list[global_edge_server_number].cpu1_cap * 1000000));
+
+    }else{
+        usleep((int)(num_instructions / edge_server_list[global_edge_server_number].cpu2_cap * 1000000));
     }
 
-    // waits for threads to die
-    for (int i = 0; i < 2; i++){
-        pthread_join(&shared_data->servers[l].vcpus[i], NULL);
+    //set cpu as available and update executed tasks
+    pthread_mutex_lock(&Shared_Memory-shm_edge_servers);
+
+    //check performance mode
+    edge_server_list[global_edge_server_number].available_vCPUs[t_args->cpu - 1] = 1;
+    edge_server_list[global_edge_server_number].executed_tasks++;
+
+    //avisar o task manager/processo ES que há um cpu disponível
+    pthread_cond_broadcast(&Shared_Memory->edge_server_sig);
+    pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+
+    //log
+    char buf[256];
+    snprintf(buf, 256, "%s,CPU%d: TASK %d COMPLETED", edge_servers_list[global_edge_server_number].name, t_args->cpu, task_id);
+    addLog(buf);
+
+    pthread_exit(NULL);
+}
+
+
+/*----------------------------- endMONITOR ---------------------------------*/
+void * endMonitor(){
+    
+    //wait fir system manager signal saying that we should end servers
+    //resolver isto dos mutexes
+    pthread_mutex_t m;
+    struct timespec ts;
+
+    pthread_mutex_lock(&m);
+
+    pthread_cond_wait(&Shared_Memory->end_system_sig, &m);
+
+
+    //check performance mode and wait for threads if necessary
+    sem_wait(Shared_Memory->check_performance_mode);
+
+    if(Shared_Memory->all_performance_mode == 1){
+        sem_post(Shared_Memory->check_performance_mode);
+
+        pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+        //wait for vCPU1 to end the work
+        while(edge_server_list[global_edge_server_number].available_vCPUs[0] == 0){
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec +=3;
+
+            //printf("%d %d %d\n",glob_edge_server_number,edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[0],edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[1]);
+            pthread_cond_timedwait(&Shared_Memory->edge_server_sig, &Shared_Memory->shm_edge_servers, &ts);
+
+        }
+    }else if(Shared_Memory->all_performance_mode == 2){
+        
+        sem_post(Shared_Memory->check_performance_mode);
+
+        pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+        //wait for CPU´s to end the work
+        while(edge_server_list[global_edge_server_number].available_vCPUs[0] == 0 || edge_server_list[global_edge_server_number].available_vCPUs[1] == 0){
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_sec += 3;
+
+            //printf("%d %d %d\n",glob_edge_server_number,edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[0],edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[1]);
+            pthread_cond_timedwait(&SMV->edge_server_sig,&SMV->shm_edge_servers,&ts);
+            //printf("TIMER EXPIRED ON %d, CHECKING CPUS\n",glob_edge_server_number);
+
+        }
     }
+
+    pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+    
+    pthread_mutex_unlock(&m);
+    pthread_mutex_destroy(&m);
+
+    char buf[80];
+    snprintf(buf, sizeof(buf), "CLOSING EDGE SERVER NO. %d", global_edge_server_number);
+    addLog(buf);
     exit(0);
 }
 
-void * thread_scheduler(){
+/*------------------------------- doMAINTENANCE ------------------------------------*/
+void doMaintenance(pid_t es_pid){
+    char buffer[512];
+    msg rcv_msg;
 
-    pthread_exit(NULL);
-    return NULL;
+    //check for messages from maintenance manager
+    if(msgrcv(Shared_Memory->msqid,&rcv_msg, sizeof(rcv_msg) - sizeof(long), es_pid, IPC_NOWAIT) != -1){
+
+        //received a message
+        //printf("received message on edge server %d, %ld %d\n",glob_edge_server_number,rcv_msg.msgtype,rcv_msg.msg_content);
+        
+        //check performance mode and wait for threads
+        sem_wait(Shared_Memory->check_performance_mode);
+        if(Shared_Memory->all_performance_mode == 1){
+            sem_post(Shared_Memory->check_performance_mode);
+
+            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+            //set cpu as unavailable for maintenance
+            edge_server_list[global_edge_server_number].available_vCPUs[0] = 0;
+            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+        }else if(Shared_Memory->all_performance_mode == 2){
+            sem_post(Shared_Memory->check_performance_mode);
+
+            //boths CPU's running
+            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+            if( edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[0] == 0 && edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[1] == 0){
+                //thread is working, wait for it
+                pthread_cond_wait(&Shared_Memory->edge_Server_sig, &Shared_Memory->shm_edge_servers);
+
+                //Check which CPU ended
+                //TODO
+                //LOOP COM PTHREAD_COND_WAIT
+
+
+            }else if(edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[0] == 0){
+                //only 1 vCPU running
+                //set vCPU2 as unavailable
+                edge_servers_list[global_edge_server_number].available_vCPUs[1] = 0;
+
+                //thread is working, wait for it
+                while(edge_server_list[global_edge_server_number].available_vCPUs[0] == 0){
+                    pthread_cond_wait(%Shared_Memory->edge_server_sig, &Shared_Memory->shm_edge_servers);
+                }
+                //set vCPU1 as unavailable
+                edge_servers_list[global_edge_server_number].available_vCPUs[0] = 0;
+
+            }else if(edge_server_list[glob_edge_server_number].AVAILABLE_CPUS[1] == 0){
+                //only vCPU2 working
+                //set vCPU1 as unavailable
+                edge_servers_list[global_edge_server_number].available_vCPUs[0] = 0;
+
+                //Thread is running, wait for it
+                while(edge_server_list[global_edge_server_number].available_vCPUs[1] == 0){
+                    pthread_cond_wait(%Shared_Memory->edge_server_sig, &Shared_Memory->shm_edge_servers);
+                }
+
+                //set vCPU2 as unavailable
+                edge_servers_list[global_edge_server_number].available_vCPUs[1] = 0;
+            }
+
+            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+        }
+        //send msg to maintenance, saying that the ES is ready to do maintenance
+        rcv_msg.msgtype = es_pid + 50;
+        rcv_msg.msg_content = 0;
+        msgsnd(Shared_Memory->msqid, &recv_msg, sizeof(rcv_msg) - sizeof(long), 0);
+
+        //log
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer), "EDGE SERVER %d GOING TO MAINTENANCE", global_edge_server_number);
+        addLog(buffer);
+
+        //wait for maintenance manager saying maintenance is done
+        msgrcv(Shared_Memory->msqid, &rev_msg, sizeof(rcv_msg) - sizeof(long), es_pid, 0);
+
+        //check performance mode, set correct vCPU's to available
+        sem_wait(Shared_Memory->check_performance_mode);
+        if(Shared_Memory->all_performance_mode == 1){
+            sem_post(Shared_Memory->check_performance_mode);
+
+            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+
+            //set vCPU as available
+            edge_server_list[global_edge_server_number].available_vCPUs[0] = 1;
+
+            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+        
+        }else if(Shared_Memory->all_performance_mode == 2){
+            sem_post(Shared_Memory->check_performance_mode);
+
+            //set both vCPU's available
+            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
+
+            edge_server_list[global_edge_server_number].available_vCPUs[0] = 1;
+            edge_server_list[global_edge_server_number].available_vCPUs[1] = 1;
+
+            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
+        }
+
+        memset(buffer, 0, sizeof(buffer));
+        snprintf(buffer, sizeof(buffer), "EDGE SERVER %d ENDED MAINTENANCE", global_edge_server_number);
+        addLog(buffer);
+
+        //New vCPU's available
+        pthread_cond_broadcast(&Shared_Memory->edge_server_sig);
+    }
 }
 
-void * thread_dispatcher(){
-    pthread_exit(NULL);
-    return NULL;
-}
 
-void * thread_vcpu(){
-    pthread_exit(NULL);
-    return NULL;
-}
+
 
 int error(char *title, char *message){
     addLog("[ERROR] %s: %s\n", title, message);
     return 1;
 }
 
-void addLog(char mensagem) {
+void addLog(char* mensagem) {
     FILE *file = fopen("log.txt","a");
+
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
+
     sem_wait(mutex_log);
     printf("%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);
     fprintf(file, "%d:%d:%d %s\n", tm->tm_hour, tm->tm_min, tm->tm_sec, mensagem);

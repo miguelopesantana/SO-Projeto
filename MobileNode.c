@@ -1,7 +1,9 @@
 #include "MN_header.h"
+#define BUFPIP 512
+int named_pipe_file;
 
 int main(int argc, char *argv[]){
-
+    /*
     //ensure proper command structure
     if(argc != 7){
         error("Mobile Node command structure","mobile_node {num_requests} {interval_time} {num_commands} {max_time}");
@@ -32,9 +34,52 @@ int main(int argc, char *argv[]){
             tasks -> id = id++;
         }
     }
+    */
+   if(argc == 5){
+       //open TASK PIPE
+       if((named_pipe_file = open(PIPE_NAME, O_RDONLY)) < 0){
+           perror("CANNOT OPEN PIPE FOR WRITING: ");
+           exit(1);
+    }
+    //variables
+    int time_space = atoi(argv[2]);
+    int num_instructions = atoi(argv[3]);
+    int timeout = atoi(argv[4]);
+
+    for(int i = 0; i < argv[1]; i++){        
+        if(generate_request(num_instructions, timeout) != 0){
+            printf("ERROR GENERATING REQUEST NUMBER %d\n", i);
+        }
+        usleep(time_space * 1000);
+    }
+    }else{
+        fprintf(stderr, "WRONG COMMAND FORMAT\n");
+        return -1;
+    }
+
+    close(named_pipe_file);
+    printf("ALL REQUESTS PLACED SUCCESSFULLY ON THE PIPE!\nCLOSING MOBILE NODE...\n");
+    return 0;
 }
+
+int generate_request(int num_instructions, int timeout){
+    char buffer[BUFPIP];
+    srand(time(0));
+
+    snprintf(buffer, BUFPIP, "%d;%d;%d\n", 1 + rand()%500000, num_instructions, timeout);
+
+    if(write(named_pipe_file, buffer, BUFPIP) < 0){
+        perror("WRITE: ");
+        return 1;
+    }
+
+    return 0;
+}
+
+
 
 int error(char *title, char *message){
     printf("[ERROR] %s: %s\n", title, message);
     return 1;
 }
+
