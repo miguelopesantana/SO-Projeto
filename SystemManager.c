@@ -22,6 +22,11 @@ int main(int argc, char *argv[]){
     signal(SIGTSTP, sigtstp);
     signal(SIGINT,sigint);
 
+      //Keep handling CTRL+Z until CTRL+C comes and finishes the program
+    while(1)
+        pause();
+
+
     return 0;
 }
 
@@ -32,9 +37,11 @@ void clean(){
     pthread_cond_broadcast(&Shared_Memory->end_system_sig);
 
     //Espera aqui, só pode fechar a shared memory quando todos os outros processos fecharem
-    for(int i = 0; i<3; i++){
-        wait(NULL);
-    }
+    //for(int i = 0; i<3; i++){
+    //    wait(NULL);
+    //}
+    int wait_status;
+    while((wait_status = wait(NULL)) > 0 || (wait_status == -1 && errno == EINTR));
 
     //print estatísticas
     sigtstp();
@@ -50,7 +57,8 @@ void clean(){
 
     pthread_cond_destroy(&Shared_Memory->edge_server_sig);
     pthread_cond_destroy(&Shared_Memory->end_system_sig);
-    pthread_cond_destroy(&Shared_Memory->new_task_cond);
+    //pthread_cond_destroy(&Shared_Memory->new_task_cond);
+    pthread_cond_destroy(&SMV->edge_server_move);
     pthread_condattr_destroy(&Shared_Memory->attr_cond);
     
     pthread_mutex_destroy(&Shared_Memory->shm_edge_servers);
@@ -63,7 +71,7 @@ void clean(){
 void sigint(){
 
     addLog("CLEANING UP RESOURCES");
-    cleanup();
+    clean();
     addLog("CLEANUP COMPLETE! CLOSING SYTEM");~
 
     //close log sem
@@ -89,6 +97,10 @@ void sigtstp(){
     for(int i = 0; i < Shared_Memory->num_servers; i++){
         memset(buffer, 0, BUFSIZ);
         snprintf(buffer, BUFSIZ, "Completed tasks at Edge Server %d: %d", i, edge_server_lists[i].executed_tasks);
+        addLog(buffer);
+
+        memset(buffer,0,BUFSIZ);
+        snprintf(buffer,BUFSIZ,"Completed maintenance tasks at Edge Server %d: %d",i,edge_server_lists[i].maintenance_tasks);
         addLog(buffer);
 
         total_tasks += edge_server_lists[i].executed_tasks;
@@ -124,8 +136,13 @@ void sigtstp(){
 int TaskManager(){
     
     //open unnamed pipes
+    int flags;
     for(int i = 0; i < Shared_Memory->num_servers; i++){
         pipe(edge_server_lists[i].pipe);
+
+        //set read for non-blockinng mode
+        flags = fcntl(edge_server_lists[i].pipe[0], F_GETFL, 0);
+        fcntl(edge_server_lists[i].pipe[0], F_SETFL, flags | O_NONBLOCK);
     }
 
     edge_servers_processes = malloc(sizeof(pid_t) * (Shared_Memory->num_servers));
@@ -139,7 +156,7 @@ int TaskManager(){
     }
 
     //open named pipe for reading
-    if((name_pipe_file = open(PIPE_NAME, O_RDWR)) < 0){
+    if((named_pipe_file = open(PIPE_NAME, O_RDWR)) < 0){
         addLog("Cannot open pipe");
         end_sig_tm();
         exit(1);
@@ -152,12 +169,6 @@ int TaskManager(){
     Shared_Memory->node_number = 0
     msg_stack->first_node = NULL;
 
-    //handle en signal
-    //signal(SIGINT, end_sig_tm);
-
-    //monitor
-    pthread_t monitor;
-    pthread_create(&monitor, NULL, endMonitorTM,0);
 
     //Dispatcher Thread
     pthread_create(&tm_threads[1], NULL, dispatcher, 0);
@@ -166,7 +177,7 @@ int TaskManager(){
     pthread_create(&tm_threads[0], NULL, scheduler, 0);
 
     //condiçao variável à espera que o system acabe
-    pthread_join(monitor, NULL);
+    endMonitorTM();
 
     return 0;
 }
@@ -174,117 +185,129 @@ int TaskManager(){
 
 void *scheduler(){
 
-    char pipe_buffer[BIF_PIPE];
+    char pipe_buffer[BUF_PIPE];
     int number_read;
     int id_task;
     int num_instructions;
     int timeout_priority;
     char *tok;
     char *rest;
+    int father_pid = getppid();
+    char x[10] = "EXIT", y[10] = "STATS";
     memset(pipe_buffer, 0, BUF_PIPE);
 
     fd_set read_set;
     FD_ZERO(&read_set);
     FD_SET(named_pipe_file, &read_set);
 
+    while(1){
     /*
-        for (int i = 0; i < 3; i++)
-        {
-
-            num_instructions = i;
-            timeout_priority = i;
-
-            // Reevaluate priorities and insert into message list
-            pthread_mutex_lock(&rd_wr_list);
-            check_priorities(&fila_mensagens);
-
-            insert_list(&fila_mensagens, timeout_priority, num_instructions, timeout_priority);
-            insert_list(&fila_mensagens, timeout_priority*2, num_instructions*2, timeout_priority*2);
-            insert_list(&fila_mensagens, timeout_priority*3, num_instructions*3, timeout_priority*3);
-            insert_list(&fila_mensagens, timeout_priority*5, num_instructions*5, timeout_priority*5);
-
-
-            Node *aux = fila_mensagens->first_node;
-            while (aux != NULL)
+            for (int i = 0; i < 3; i++)
             {
-                printf("No: %d,%d,%d\n", aux->id_node, aux->num_instructions, aux->priority);
-                aux = aux->next_node;
-            }
 
-            //if(fila_mensagens->node_number == 1){
-                // Avisar o dispatcher que já há mensangens na fila
-                pthread_cond_signal(&new_task_cond);
-            //}
+                num_instructions = i;
+                timeout_priority = i;
 
+                // Reevaluate priorities and insert into message list
+                pthread_mutex_lock(&rd_wr_list);
+                checkPriorities(&fila_mensagens);
 
-            pthread_mutex_unlock(&rd_wr_list);
-
-
-
-            printf("antes sleep\n");
-            sleep(5);
-            printf("depois\n");
-        }
-        */
-
-    //espera por mensagens no TASK_PIPE
-    if(select(name_pipe_file + 1, &read_Set, NULL, NULL, NULL) > 0){
-        if(FD_ISSEST(name_pipe_file, &read_set)){
+                insert_list(&fila_mensagens, timeout_priority, num_instructions, timeout_priority);
+                insert_list(&fila_mensagens, timeout_priority*2, num_instructions*2, timeout_priority*2);
+                insert_list(&fila_mensagens, timeout_priority*3, num_instructions*3, timeout_priority*3);
+                insert_list(&fila_mensagens, timeout_priority*5, num_instructions*5, timeout_priority*5);
 
 
-            number_read = read(name_pipe_file, buffer_pipe, BUF_PIPE);
-            buffer_pipe[number_read] = "\0";
-
-            if(number_read > 0){
-                
-                //Todo check if it's a QUIT or STATS command before continuing
-
-                //split arguments
-                tok = atrtok_r(buffer_pipe, ";", &rest);
-                id_task = atoi(tok);
-                id_task++;
-
-                tok = strtok_r(NULL,";",&resto);
-                num_instructions = atoi(tok);
-
-                tok = strtok_r(NULL,";",&resto);
-                timeout_priority = atoi(tok);
-
-                pthread_mutex_lock(&Shared_Memory->sem_tm_queue);
-
-                //check if message queue is full
-                if(Shared_Memory->node_number == Shared_Memory->num_slots){
-                    //log
-                    addLog("TASK MANAGER QUEUE FULL, MESSAGE DISCARDED");
-
-                    sem_wait(Shared_Memory->shm_write);
-                    Shared_Memory->non_executed_tasks++;
-                    sem_post(Shared_memory->shm_write);
-
-                }else{
-                    //reeavaluate priorities and insert into message list
-                    check_priorities(&msg_stack);
-                    insert_list(&msg_stack, timeout_priority, num_instructions, timeout_priority);
-
-                    //avisa o monitor para verificar o load da fila
-                    //avisar o dispatcher que há mensagens na fila
-
-                    pthread_cond_broadcast(&Shared_Memory->new_task_cond);
-
+                Node *aux = fila_mensagens->first_node;
+                while (aux != NULL)
+                {
+                    printf("No: %d,%d,%d\n", aux->id_node, aux->num_instructions, aux->priority);
+                    aux = aux->next_node;
                 }
-                pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
-            }else{
-                printf("recebeu 0\n");
+
+                //if(fila_mensagens->node_number == 1){
+                    // Avisar o dispatcher que já há mensangens na fila
+                    pthread_cond_signal(&new_task_cond);
+                //}
+
+
+                pthread_mutex_unlock(&rd_wr_list);
+
+
+
+                printf("antes sleep\n");
+                sleep(5);
+                printf("depois\n");
+            }
+            */
+
+        //espera por mensagens no TASK_PIPE
+        if(select(named_pipe_file + 1, &read_Set, NULL, NULL, NULL) > 0){
+            if(FD_ISSET(named_pipe_file, &read_set)){
+
+
+                number_read = read(named_pipe_file, buffer_pipe, BUF_PIPE);
+                buffer_pipe[number_read] = "\0";
+
+                if(number_read > 0){
+                    
+                    //Todo check if it's a QUIT or STATS command before continuing
+                    if(!strcmp(buffer_pipe, y)){
+                        //kill(getppid(), SIGTSTP);
+                        printf("%d\n", father_pid);
+                    }else if(!strcmp(buffer_pipe, x)){
+                        printf("%d\n", father_pid);
+                        kill(getppid(), SIGINT);
+                    }
+
+                    //split arguments
+                    tok = atrtok_r(buffer_pipe, ";", &rest);
+                    id_task = atoi(tok);
+                    id_task++;
+
+                    tok = strtok_r(NULL,";",&resto);
+                    num_instructions = atoi(tok);
+
+                    tok = strtok_r(NULL,";",&resto);
+                    timeout_priority = atoi(tok);
+
+                    pthread_mutex_lock(&Shared_Memory->sem_tm_queue);
+
+                    //check if message queue is full
+                    if(Shared_Memory->node_number == Shared_Memory->num_slots){
+                        //log
+                        addLog("TASK MANAGER QUEUE FULL, MESSAGE DISCARDED");
+
+                        sem_wait(Shared_Memory->shm_write);
+                        Shared_Memory->non_executed_tasks++;
+                        sem_post(Shared_memory->shm_write);
+
+                    }else{
+                        //reeavaluate priorities and insert into message list
+                        checkPriorities(&msg_stack);
+                        insert(&msg_stack, timeout_priority, num_instructions, timeout_priority);
+
+                        //avisa o monitor para verificar o load da fila
+                        //avisar o dispatcher que há mensagens na fila
+
+                        pthread_cond_broadcast(&Shared_Memory->new_task_cond);
+
+                    }
+                    pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
+                }else{
+                    printf("recebeu 0\n");
+                }
             }
         }
     }
     pthread_exit(NULL);
+    
 
 }
 
 void *dispatcher(){
 
-    pthread_cleanup_push(thread_cleanup_handler, NULL);
+    pthread_cleanup_push(thread_cleanup, NULL);
 
     Node *next_task = (Node*)malloc(sizeof(Node));
 
@@ -296,18 +319,18 @@ void *dispatcher(){
         }
 
         //ir buscar a task com maior prioridade
-        get_next_task(&msg_stack, &next_task);
+        getNextTask(&msg_stack, &next_task);
 
         pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
 
         //try to send the task to some edge server . if there are no vCPUs available, waits for a signal saying that some vCPU just ended a task
         pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
-        while(try_to_send(new_task) == 1){
+        while(try_to_send(next_task) == 1){
 
             //nenhum edge server disponivel, esperar por o sinal de algum deles e verificar novamente
             addLog("DISPATCHER: ALL EDGE SERVERS BUSY, WAITING FOR AVAILABLE vCPUs");
             pthread_cond_wait(&Shared_Memory->edge_server_sig, &Shared-Memory->shm_edge_servers);
-            addLog("DISPATCHER: 1 CPU BECAME AVAILABLE\n");
+            //addLog("DISPATCHER: 1 CPU BECAME AVAILABLE\n");
         }
         pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
         usleep(2000);
@@ -340,12 +363,17 @@ int try_to_send(Node *next_task){
         //discard task
         snprintf(task_str, 512, "TASK %d DISCARDED AT DISPATCHER: NO TIME TO COMPLETE", next_task->id_node);
         addLog(task_str);
+        //signal monitor to check queue occupation
+        pthread_cond_signal(&Shared_Memory->new_task_cond);
         return 0;
     }else if(flag == 1){
          
         //send to server
         snprintf(task_str, 512,"%d;%d", next_task->id_node, next_task->num_instructions);
         write(edge_server_list[pipe_to_send].pipe[1], &task_str, sizeof(task_Str));
+
+        //signal edge server that a new message has been sent
+        pthread_cond_broadcast(&Shared_Memory->edge_server_move);
 
         //log
         snprintf(task_str, sizeof(task_str), "TASK %d SELECTED %d FOR EXECUTION ON %s", next_task->id_node, next_task->priority, edge_server_lists[pipe_to_send].name);
@@ -366,19 +394,20 @@ int try_to_send(Node *next_task){
 //Check for available vCPUs in the Edge Servers
 
 void check_vcpus(Node *next_task, int **flag, int **pipe_to_send){
-    time_t now;
-    struct tm check_time;
 
-    time(&now);
-    localtime_r(&now, &check_time);
-    int tempo_decorrido = (abs(check_time.tm_min - next_task->arrive_time.tm_min)%60)*60 + abs(check_time.tm_sec - next_task->arrive_time.tm_sec)%60;
+
+    int tempo_decorrido = time_since_arrive(next_task);
     int tempo_restante = next_task->timeout - tempo_decorrido;
+
+    if(tempo_restante <= 0){
+        return;
+    }
 
     //pthread_mutex_lock(&SMV->shm_edge_servers);
     //Check if there is any available CPU and, if so, check if it has capacity to run the task in time
     for(int i = 0; i < Shared_Memory->num_servers; i++){
         if(edge_server_lists[i].available_vCPUs[0] == 1){ //CPU1 available on Edge server i
-            if(next_task->num_instructions/edge_server_lists[i].cpu1_cap <= tempo_restante){ //CPU1 has capacity to run the task in time
+            if((long long int)next_task->num_instructions*1000/ ((long long int)edge_server_lists[i].cpu1_cap*1000000) <= tempo_restante){ //CPU1 has capacity to run the task in time
                 *(*pipe_to_send) = i;
                 *(*flag) = 1;
                 break;
@@ -386,7 +415,7 @@ void check_vcpus(Node *next_task, int **flag, int **pipe_to_send){
             *(*flag) = 1;
         }
         if(edge_server_lists[i].available_vCPUs[1] == 1){ //CPU2 available on Edge server i
-            if(next_task->num_instructions/edge_server_lists[i].cpu2_cap <= tempo_restante){ //CPU2 has capacity to run the task in time
+            if((long long int)next_task->num_instructions*1000/ ((long long int)edge_server_lists[i].cpu2_cap*1000000) <= tempo_restante){ //CPU2 has capacity to run the task in time
                 *(*pipe_to_send) = i;
                 *(*flag) = 1;
                 break;
@@ -394,7 +423,7 @@ void check_vcpus(Node *next_task, int **flag, int **pipe_to_send){
             *(*flag) = 1;
         }
     }
-    //pthread_mutex_unlock(&SMV->shm_edge_servers);
+
 }
 
 void end_sig_tm(){
@@ -404,17 +433,21 @@ void end_sig_tm(){
     addLog("CLEANING UP TASK MANAGER");
 
     //Close Threads
-    //pthread_mutex_lock(&SMV->shm_edge_servers);
+
     pthread_cancel(tm_threads[0]);
     pthread_cancel(tm_threads[1]);
-    //pthread_mutex_unlock(&SMV->shm_edge_servers);
+
 
     //Escrever no log as mensagens que resta na fila do scheduler + named pipe
-    for(int i = 0; i < Shared_Memory->node_number; i++){
+    sem_wait(Shared_memory->shm_write);
+    while(aux != NULL){
         snprintf(buffer,sizeof(buffer), "TASK %d LEFT UNDONE", aux->id_node);
         addLog(buffer);
         aux = aux->next_node;
+        Shared_Memory->non_executed_tasks++;
     }
+    sem_post(Shared_memory->shm_write);
+
 
     //clean message queue
     free(msg_stack);
@@ -496,27 +529,22 @@ int remove(linked_list ** list, int id_node){
     }
 }
 
-void check_priorities(linked_list ** list){
+void checkPriorities(linked_list ** list){
 
-    //time_t now;
-    //struct tm check_time;
-    //int elapsed_min;
+
     int elapsed_sec;
 
     Node *node_aux = (*list)->first_node;
+    char buf[256];
 
     while(node_aux != NULL){
-        // Check if task has passed timeout;
-        // time(&now);
-        // localtime_r(&now, &check_time);
+       
+        elapsed_sec = time_since_arrive(aux_node);
 
-        // elapsed_minutes = abs(check_time.tm_min - aux_node->arrive_time.tm_min) % 60;
-        // elapsed_seconds = elapsed_minutes * 60 + abs(check_time.tm_sec - aux_node->arrive_time.tm_sec)%60;
-        elapsed_seconds = time_since_arrive(aux_node);
-
-        if(elapsed_seconds >= aux_node->timeout){
+        if(elapsed_sec >= aux_node->timeout){
             //escrever para o log e remover a task da fila
-            addLog("TASK %d TIMED OUT", aux_node->id_node);
+            snprintf(buf,sizeof(buf),"Task %d removed from queue by timeout",node_aux->id_node);
+            addLog(buf);
             //errado
             int id_to_remove = aux_node->id_node;
             node_aux = node_aux->next_node;
@@ -531,7 +559,7 @@ void check_priorities(linked_list ** list){
     }
 }
 
-void get_next_task(linked_list ** list, Node ** next_task){
+void getNextTask(linked_list ** list, Node ** next_task){
 
     Node *node_aux = (*list)->first_node;
     int most_priority_task_id = node_aux->id_node;
@@ -546,7 +574,7 @@ void get_next_task(linked_list ** list, Node ** next_task){
 
     //get the most prioritary node
     while(node_aux != NULL){
-        if(node_aux->priority > max_priority){
+        if(node_aux->priority < max_priority){
             most_priority_task_id = node_aux->id_node;
             max_priority = node_aux->priority;
 
@@ -558,6 +586,7 @@ void get_next_task(linked_list ** list, Node ** next_task){
             (*next_task)->priority = node_aux->priority;
             (*next_task)->timeout = node_aux->timeout;
         }
+        node_aux = node_aux->next_node;
     }
     //remove the most prioritary node from the list
     remove(list, most_priority_task_id);
@@ -595,8 +624,8 @@ void thread_cleanup(void *arg){
 
 // --------------------------Função Maintenance Manager----------------------------------
 int MaintenanceManager(){
-    signal(SIGINT,SIG_DFL);
-    pid_t *pids_list = malloc(sizeof(pid_t) * Shared_Memory->num_servers);
+    signal(SIGINT,maintenance_sigint);
+    pids_list = malloc(sizeof(pid_t) * Shared_Memory->num_servers);
     int server_to_maintenance;
     msg work_msg;
     char buf[512];
@@ -613,7 +642,7 @@ int MaintenanceManager(){
     //work
     while(1){
         //sleep
-        sleep(10 + rand()%5);
+        sleep(1 + rand()%5);
 
         server_to_maintenance = rand()%Shared_Memory->num_servers;
 
@@ -623,9 +652,12 @@ int MaintenanceManager(){
         work_msg.msg_content = 0;
 
         //write na MQ
-        snprintf(buf, sizeof(buf), "SENDING EDGE SERVER %d TO MAINTENANCE", server_to_maintenance);
+        snprintf(buf, sizeof(buf), "Sending Edge Server %d to maintenance", server_to_maintenance);
         addLog(buf);
         msgsnd(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), 0);
+
+        //warn edge server
+        pthread_cond_broadcast(&Shared_Memory->edge_server_move);
 
         //wait for edge server saying is ready for maintenance
         msgrcv(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), pids_list[server_to_maintenance] + 50, 0);
@@ -645,9 +677,16 @@ int MaintenanceManager(){
 
 }
 
+void maintenance_sigint(){
+    free(pids_list);
+    exit(0);
+}
+
 // ----------------------------Função Monitor---------------------------------------
-int Monitor(){
-    signal (SIGINT, SIG_DFL);
+int workMonitor(){
+    
+    pthread_cleanup_push(thread_cleanup_monitor, NULL);
+
     while(1){
         //recebe o sinal da thread quando é colocada uma tarefa na fila
         pthread_mutex_lock(&Shared_Memory->sem_tm_queue);
@@ -655,13 +694,14 @@ int Monitor(){
         pthread_cond_wait(&Shared_Memory->new_task_cond,&Shared_Memory->sem_tm_queue);
 
         //printf("check monitor %d %d %f\n", SMV->node_number,SMV->QUEUE_POS, (double)SMV->node_number/ (double)SMV->QUEUE_POS);
+        sem_wait(&Shared_Memory->check_performance_mode);
 
-        if( (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots > 0.8){ //se a fila está ocupada a >80%
+        if( (Shared_Memory->performance_mode == 1) && (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots > 0.8){ //se a fila está ocupada a >80%
 
-            write_screen_log("QUEUE ALMOST FULL: CHANGING PERFORMANCE MODE TO 2");
+            write_screen_log("Queue almost full: Changing performance mode to 2");
 
             sem_wait(Shared_Memory->check_performance_mode);
-            Shared_Memory->ALL_PERFORMANCE_MODE = 2;
+            Shared_Memory->performance_mode = 2;
 
             pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
             for(int i = 0;i< Shared_Memory->num_servers; i++){
@@ -669,20 +709,13 @@ int Monitor(){
             }
             pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
 
-
-
-            sem_post(Shared_Memory->check_performance_mode);
-
-
         }
 
-        sem_wait(Shared_Memory->check_performance_mode);
+        if( (Shared_Memory->performance_mode == 2) && ( (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots < 0.2) ){ //caiu para 20% ocupação
 
-        if( (Shared_Memory->all_performance_mode == 2) && ( (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots < 0.2) ){ //caiu para 20% ocupação
+            addLog("Changing performance mode to 1: Power saving");
 
-            addLog("CHANGING PERFORMANCE MODE TO 1: POWER SAVING");
-
-            Shared_Memory->all_performance_mode = 1;
+            Shared_Memory->performance_mode = 1;
 
             pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
             for(int i = 0;i< Shared_Memory->num_servers; i++){
@@ -696,11 +729,38 @@ int Monitor(){
         pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
 
     }
+    pthread_cleanup_pop(0);
 
-    return 0;
+    pthread_exit(NULL);
 
 }
 
+void thread_cleanup_monitor(void* arg){
+    pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
+}
+
+int Monitor(){
+    //signal (SIGINT, SIG_DFL);
+    pthread_t work_monitor_thread;
+    pthread_create(&work_monitor_thread,NULL,workMonitor,NULL);
+    pthread_detach(work_monitor_thread);
+
+    //Wait for end signal
+    pthread_mutex_t aux = PTHREAD_MUTEX_INITIALIZER; 
+    pthread_mutex_lock(&aux);
+
+    pthread_cond_wait(&SMV->end_system_sig,&aux);
+
+    //garantir que o semaforo da condicao que vamos cancelar está unlocked
+    //pthread_mutex_unlock(&SMV->sem_tm_queue);
+
+    pthread_cancel(work_monitor_thread);
+
+    pthread_mutex_unlock(&aux);
+    pthread_mutex_destroy(&aux);
+
+    exit(0);
+}
 //----------------------------System Manager--------------------------------------
 
 int SystemManager(char* file){
@@ -717,7 +777,7 @@ int SystemManager(char* file){
 
     //TODO PROTEGER CONTRA MAU INPUT DO CONFIG FILE
     //Check file with regex functions
-    /*
+    
     char *all_cfg_file = (char*) malloc(sizeof(char) * 8192);
 
     if (fscanf(initFile,"%s",all_cfg_file) != 1){
@@ -732,7 +792,7 @@ int SystemManager(char* file){
 
     free(all_cfg_file);
     rewind(initFile);
-    */
+    
 
     //process the config file data
     int queue_pos_temp, max_wait_temp,edge_servers_number_temp;
@@ -769,6 +829,8 @@ int SystemManager(char* file){
 
     pthread_cond_init(&Shared_Memory->new_task_cond, &Shared_Memory->attr_cond);
 
+    pthread_cond_init(&Shared_Memory->edge_server_move,&Shared_Memory->attr_cond);
+
     pthread_muttexattr_init(&Shared_Memory->attr_mutex);
     pthread_muttexattr_stepshared(&Shared_Memory->attr_mutex, PTHREAD_PROCESS_SHARED);
 
@@ -776,7 +838,7 @@ int SystemManager(char* file){
     pthread_mutex_init(&Shared_Memory->sem_tm_queue, &Shared_Memory->attr_mutex);
 
     addLog("SHARED MEMORY CREATED");
-    addLog("SHARED MEMORY ATTACHED");
+
 
     //put edge_servers on shared memory
     //read properties for each edge server
@@ -789,25 +851,27 @@ int SystemManager(char* file){
             fscanf(initial_file, "%s12[^,],%d,%d\n", edge_server_lists[i].name, &edge_server_lists[i].cpu1_cap, &edge_server_lists[i].cpu2_cap);
         }
 
-    }
-    sem_post(Shared_Memory->shm_write);
         /*
 
 
 
         */
 
+    }
+    sem_post(Shared_Memory->shm_write);
+        
+
     //Create named pipe
     if( (mkfifo(edge_server_lists[i].name, 0666) < 0) ){
-        addLog("ERROR CREATING FIFO");
-        //cleanup();
+        addLog("Error creating pipe");
+        sigint();
         exit(1);
     }
-    addLog("TASK PIPE CREATED");
+    addLog("Task pipe created");
 
     //Create message queue
     if(( Shared->msqid = msgget( ftok("./TASK_PIPE", 1), IPC_CREAT | 0700)) == -1){
-        addLog("ERROR CREATING MAINTENANCE MANAGER MESSAGE QUEUE");
+        addLog("Error creating maintenance manager message queue");
         exit(1);
     }
 
@@ -815,33 +879,33 @@ int SystemManager(char* file){
 
     //Monitor
     if(Shared_Memory->child_pids[0] = fork() == 0){
-        addLog("MONITOR PROCESS CREATED");
+        addLog("Monitor process created");
         Monitor();
         exit(0);
     }else if(Shared_Memory->child_pids[0] == -1){
-        addLog("ERROR CREATING MONITOR PROCESS. CLOSING PROGRAM...");
-        exit(0);
+        addLog("Error creating Monitor process. Closing program...");
+        exit(1);
     }
 
     //Task Manager
     if(Shared_Memory->child_pids[1] = fork() == 0){
-        addLog("TASK MANAGER PROCESS CREATED");
+        addLog("Task Manager process created");
         TaskManager();
         exit(0);
     }else if(Shared_Memory->child_pids[1] == -1){
-        addLog("ERROR CREATING TASK MANAGER PROCESS. CLOSING PROGRAM...");
-        //cleanup
+        addLog("Error creating Task Manager process. Closing program...");
+        sigint();
         exit(2);
     }
 
     //Maintenance Manager
     if(Shared_Memory->child_pids[2] = fork() == 0){
-        addLog("MAINTENANCE MANAGER PROCESS CREATED");
+        addLog("Maintenance Manager process created");
         MaintenanceManager();
         exit(0);
     }else if(Shared_Memory->child_pids[2] == -1){
-        addLog("ERROR CREATING MAINTENANCE MANAGER PROCESS. CLOSING PROGRAM...");
-        //cleanup
+        addLog("Error creating Maintenance Manager process. Closing program...");
+        sigint();
         exit(3);
     }
 

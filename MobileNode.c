@@ -38,7 +38,7 @@ int main(int argc, char *argv[]){
    if(argc == 5){
        //open TASK PIPE
        if((named_pipe_file = open(PIPE_NAME, O_RDONLY)) < 0){
-           perror("CANNOT OPEN PIPE FOR WRITING: ");
+           perror("Cannot open pipe for writting: ");
            exit(1);
     }
     //variables
@@ -48,17 +48,17 @@ int main(int argc, char *argv[]){
 
     for(int i = 0; i < argv[1]; i++){        
         if(generate_request(num_instructions, timeout) != 0){
-            printf("ERROR GENERATING REQUEST NUMBER %d\n", i);
+            printf("Error generating request number %d\n", i);
         }
         usleep(time_space * 1000);
     }
     }else{
-        fprintf(stderr, "WRONG COMMAND FORMAT\n");
+        fprintf(stderr, "Wrong command format\n");
         return -1;
     }
 
     close(named_pipe_file);
-    printf("ALL REQUESTS PLACED SUCCESSFULLY ON THE PIPE!\nCLOSING MOBILE NODE...\n");
+    printf("All requests placed successfully on the pipe!\nClosing mobile node...\n");
     return 0;
 }
 
@@ -69,7 +69,7 @@ int generate_request(int num_instructions, int timeout){
     snprintf(buffer, BUFPIP, "%d;%d;%d\n", 1 + rand()%500000, num_instructions, timeout);
 
     if(write(named_pipe_file, buffer, BUFPIP) < 0){
-        perror("WRITE: ");
+        perror("Write: ");
         return 1;
     }
 

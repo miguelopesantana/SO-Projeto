@@ -25,7 +25,6 @@ int error(char* title, char* message);
 
 void addLog(char* mensagem);
 
-typedef enum server_status { HIGHPERF, NORMAL, STOPPED} ServerStatus;
 
 
 //struct with server's information
@@ -93,7 +92,7 @@ typedef struct shm_struct {
     int msgqid;
 
     //general edge servers performance mode
-    int all_performance_mode;
+    int performance_mode;
 
     int total_response_time;
 
@@ -115,13 +114,11 @@ typedef struct task_struct {
     int ID;
 } Task;
 
-Edge_Server* servers; //array of servers
 
-Task *tasks;
 
 sem_t * mutex_log;
 sem_t * mutex_write;
-int shmid;C:\UC\2º Ano\2º Semestre\Shared Folder\RC\Projeto RC\Intermédio
+int shmid;
 
 //task manager header
 
@@ -166,31 +163,40 @@ int check_regex(char *text, char *regex);
 /* Task Manager functions */
 
 //linked list
-void insert_list(linked_list** lista, int priority, int num_instructions, int timeout);
-int remove_from_list(linked_list** lista,int id_node);
-void check_priorities(linked_list** lista);
-void get_next_task(linked_list **lista, Node** next_task);
-void clean_list(linked_list** lista);
+void insert(linked_list** lista, int priority, int num_instructions, int timeout);
+int remove(linked_list** lista,int id_node);
+void checkPriorities(linked_list** lista);
+void getNextTask(linked_list **lista, Node** next_task);
+void clean(linked_list** lista);
 
 //Process
 int TaskManager();
 void end_sig_tm();
 void* scheduler();
 void* dispatcher();
-void* MonitorEndTM();
+void* endMonitorTM();
 
 void check_cpus(Node *next_task, int **flag, int **pipe_to_send);
 int try_to_send(Node *next_task);
 int time_since_arrive(Node *task);
 
-void debug_print_free_es();
-void thread_cleanup_handler(void* arg);
+void thread_cleanup(void* arg);
 
 /* Monitor functions */
+pthread_t monitor_end;
+
 int Monitor();
+void *MonitorWork();
+void thread_cleanup_monitor(void* arg);
+
 
 /* Maintenance Manager functions */
 int MaintenanceManager();
+pid_t* list_pids;
+void sigint_maintenance();
+
+//Maintenance and Dispatcher
+pthread_cond_t edge_server_move;
 
 /* main functions */
 void cleanup();
