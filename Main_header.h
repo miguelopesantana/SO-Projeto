@@ -73,18 +73,18 @@ typedef struct{
     //semaphores
     sem_t *log_write_mutex;
     sem_t *shm_write;
-    pthread_mutex_t shm_edge_servers;
-    sem_t *check_performance_mode;
+    pthread_mutex_t shm_servers;
+    sem_t *evaluate_performance_mode;
 
     pthread_condattr_t attr_cond;
     pthread_cond_t edge_server_sig;
 
-    pthread_cond_t edge_server_move;
+    //pthread_cond_t edge_server_move;
 
     //task manager queue
-    int node_number;
+    int task_number;
     pthread_mutexattr_t attr_mutex;
-    pthread_mutex_t sem_tm_queue;
+    pthread_mutex_t t_queue_sem;
     pthread_cond_t new_task_cond;
 
 
@@ -97,7 +97,7 @@ typedef struct{
     int total_response_time;
 
     //variables used when system is exiting
-    pthread_cond_t end_system_sig;
+    pthread_cond_t end_system_signal;
 
 } Data;
 
@@ -106,35 +106,27 @@ int shm_id;
 Data* Shared_Memory;
 Edge_Server* edge_servers;
 
-typedef struct{
-    int num_pedidos;
-    int time_betw_tasks;
-    int num_tasks;
-    int max_time;
-    int ID;
-} Task;
-
 sem_t * mutex_log;
 sem_t * mutex_write;
 int shmid;
 
 //task manager header
 typedef struct{
-    int id_node;
+    int task_id;
     int priority;
     int num_instructions;
     int timeout;
     struct tm arrive_time;
-    struct Node* next_node;
-}Node;
+    struct Task* next_task;
+}Task;
 
 typedef struct{
-    Node * first_node;
-    int node_number;
-}linked_list;
+    Task * first_task;
+    int task_number;
+}task_list;
 
-int node_id;
-linked_list *msg_stack;
+int task_counter;
+task_list *msg_stack;
 
 pid_t *edge_servers_proc;
 int named_pipe_file;
@@ -153,7 +145,8 @@ int EdgeServer(int edge_server_number);
 
 //Process
 void TaskManager();
-void end_sig_tm();
+void endSystemSignal();
+void* endSystem();
 
 void thread_cleanup(void* arg);
 
@@ -161,7 +154,7 @@ void thread_cleanup(void* arg);
 pthread_t monitor_end;
 
 void Monitor();
-void *MonitorWork();
+void controlMonitor();
 void thread_cleanup_monitor(void* arg);
 
 /* Maintenance Manager functions */

@@ -38,3 +38,134 @@ void TaskManager(){
     // //Schedular Thread
     // pthread_create(&tm_threads[0], NULL, scheduler, 0);
 }
+
+void *dispatcher(){
+    
+}
+
+void *scheduler(){
+
+}
+
+void endSystemSignal(){
+    char buffer[512];
+    Task* aux = msg_stack->first_task;
+
+    addLog("Cleaning up Task Manager");
+
+    // CLOSE THREADS
+    pthread_cancel(tm_threads[0]);
+    pthread_cancel(tm_threads[1]);
+
+
+    // ESCREVER NO LOG AS MENSAGENS QUE RESTA NA FILA DO SCHEDULER
+    sem_wait(Shared_Memory->shm_write);
+    while(aux != NULL){
+        snprintf(buffer,sizeof(buffer),"TASK %d LEFT UNDONE",aux->task_id);
+        addLog(buffer);
+        aux = aux->next_task;
+        Shared_Memory->non_executed_tasks++;
+    }
+    sem_post(Shared_Memory->shm_write);
+
+    // limpa a message queue
+    free(msg_stack);
+
+    // fecha named pipe
+    unlink(PIPE_NAME);
+    close(named_pipe_file);
+
+    // Espera que os processos Edge Server terminem
+    for (int i = 0; i < Shared_Memory->num_servers; i++){
+        wait(NULL);
+    }
+
+
+    // CLOSE UNNAMED PIPES
+    for(int i = 0; i<Shared_Memory->num_servers;i++){
+        close(edge_servers[i].pipe[0]);
+        close(edge_servers[i].pipe[1]);
+    }
+
+    free(edge_servers_proc);
+
+    addLog("Task Manager cleanup complete");
+    exit(0);
+}
+
+void* endSystem(){
+
+
+    pthread_cond_wait(&Shared_Memory->end_system_signal, &Shared_Memory->t_queue_sem);
+
+    endSystemSignal();
+
+    pthread_mutex_unlock(&Shared_Memory->t_queue_sem);
+
+    exit(0);
+
+}
+
+void insertTask(task_list **list, int priority, int num_instructions, int timeout){
+
+    time_t now;
+
+    // Create new node
+    Task *new_task =(Task *)malloc(sizeof(Task));
+    new_task->task_id = task_counter++;
+    new_task->priority = priority;
+    new_task->num_instructions = num_instructions;
+    new_task->timeout = timeout;
+    new_task->next_task = NULL;
+
+    time(&now);
+    localtime_r(&now, &new_task->arrive_time);
+
+    Task *aux = (*list)->first_task;
+
+    if (aux == NULL){
+        (*list)->first_task = new_task;
+    }else{
+        // Search for insertion place
+        while (aux->next_task != NULL){
+            aux = aux->next_task;
+        }
+
+        // Insert
+        aux->next_task = new_task;
+    }
+
+    Shared_Memory->task_number++;
+}
+
+int removeTask(task_list **list, int task_id){
+
+    Task *aux = (*list)->first_task;
+
+    // Verificar se é primeiro nó
+    if (aux->task_id == task_id){
+
+        (*list)->first_task = aux->next_task;
+        free(aux);
+        Shared_Memory->task_number--;
+        return 0;
+    }else{ // Se não é o primeiro nó
+
+        while ((aux->next_task != NULL) && (aux->next_task->task_id != task_id)){
+            aux = aux->next_task;
+        }
+
+        // Chegámos ao ultimo node e o id não corresponde
+        if (aux->next_task == NULL){
+            return 1;
+        }else{
+            
+            Task *delete = aux->next_task;
+            aux->next_task = aux->next_task->next_task;
+            free(delete);
+            Shared_Memory->task_number--;
+
+            return 0;
+        }
+    }
+}

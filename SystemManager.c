@@ -129,10 +129,11 @@ int readFile(char* file_name){
 // System Manager
 int SystemManager(char* file){
 
+    FILE *fp = fopen("log.txt","a");
+
     // Read config file and create shared memory
     readFile(file);
 
-    FILE *fp = fopen("log.txt","a");
 
     // Create semaphores
     sem_unlink("LOG_WRITE_MUTEX");
@@ -140,12 +141,14 @@ int SystemManager(char* file){
     sem_unlink("SHM_WRITE");
     Shared_Memory->shm_write = sem_open("SHM_WRITE", O_CREAT | O_EXCL, 0700, 1);
     sem_unlink("SHM_CHECK_PFM");
-    Shared_Memory->check_performance_mode = sem_open("SHM_CHECK_PFM", O_CREAT | O_EXCL, 0700, 1);
+    Shared_Memory->evaluate_performance_mode = sem_open("SHM_CHECK_PFM", O_CREAT | O_EXCL, 0700, 1);
 
 
     // Pthreads
 
-    pthread_mutex_init(&Shared_Memory->shm_edge_servers, &Shared_Memory->attr_mutex);
+    pthread_mutex_init(&Shared_Memory->shm_servers, &Shared_Memory->attr_mutex);
+    pthread_cond_init(&Shared_Memory->new_task_cond,&Shared_Memory->attr_cond);
+    pthread_cond_init(&Shared_Memory->end_system_signal,&Shared_Memory->attr_cond);
 
     sem_post(Shared_Memory->shm_write);
 
@@ -202,14 +205,12 @@ int initProc(void (*function)()){
 }
 
 
-void *dispatcher(){
-    
-}
+
 
 void clean(){
     
     //sinal para avisar os processos que é para terminar
-    pthread_cond_broadcast(&Shared_Memory->end_system_sig);
+    pthread_cond_broadcast(&Shared_Memory->end_system_signal);
 
     //Espera aqui, só pode fechar a shared memory quando todos os outros processos fecharem
     //for(int i = 0; i<3; i++){
@@ -222,17 +223,17 @@ void clean(){
     sem_unlink("SHM_WRITE");
     sem_unlink("SHM_CHECK_PFM");
     sem_close(Shared_Memory->shm_write);
-    sem_close(Shared_Memory->check_performance_mode);
+    sem_close(Shared_Memory->evaluate_performance_mode);
 
     pthread_cond_destroy(&Shared_Memory->edge_server_sig);
-    pthread_cond_destroy(&Shared_Memory->end_system_sig);
+    pthread_cond_destroy(&Shared_Memory->end_system_signal);
     //pthread_cond_destroy(&Shared_Memory->new_task_cond);
-    pthread_cond_destroy(&Shared_Memory->edge_server_move);
-    pthread_condattr_destroy(&Shared_Memory->attr_cond);
+    //pthread_cond_destroy(&Shared_Memory->edge_server_move);
+    //pthread_condattr_destroy(&Shared_Memory->attr_cond);
     
-    pthread_mutex_destroy(&Shared_Memory->shm_edge_servers);
-    pthread_mutex_destroy(&Shared_Memory->sem_tm_queue);
-    pthread_mutexattr_destroy(&Shared_Memory->attr_mutex);
+    pthread_mutex_destroy(&Shared_Memory->shm_servers);
+    pthread_mutex_destroy(&Shared_Memory->t_queue_sem);
+    //pthread_mutexattr_destroy(&Shared_Memory->attr_mutex);
 
 }
 
@@ -251,16 +252,13 @@ int closeAll(){
     shmctl(shm_id, IPC_RMID, NULL);
 
     //close after, to keep the log file updated
-    return(0);
+    return 0;
 }
 
 void thread_cleanup(void *arg){
-    pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
+    pthread_mutex_unlock(&Shared_Memory->t_queue_sem);
 }
 
-void thread_cleanup_monitor(void* arg){
-    pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
-}
 
 
 
