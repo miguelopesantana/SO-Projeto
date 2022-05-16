@@ -1,21 +1,25 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <string.h>
-#include <unistd.h>
+#include <time.h>
+
+#include <semaphore.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <errno.h>
-#include <semaphore.h>
 #include <sys/wait.h>
-#include <time.h>
+#include <unistd.h>
 #include <pthread.h>
 #include <sys/fcntl.h>
-#include "SystemManager_functions.c"
-#include "SystemManager.c"
-#include "TaskManager.c"
-#include "EdgeServer.c"
-#include "Monitor.c"
-#include "MaintenanceManager.c"
+
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/types.h>
+
+#include <signal.h>
+
+#include <sys/msg.h>
+#include <errno.h>
 
 #define MIN_LEN 64
 #define MAX_LEN 1024
@@ -23,17 +27,17 @@
 #define BUF_PIPE 512
 
 //struct with server's information
-typedef struct server_struct {
+typedef struct{
     //no semaphore needed for access
     int edge_server_num;
-    char* name[MIN_LEN];
-    int cpu1_cap;
-    int cpu2_cap;
+    char* name;
+    int vCPU1;
+    int vCPU2;
     int pipe[2];
 
     //need semaphore to access
     int performance_mode;
-    int in_maintenance;
+    int maintenance_sig;
     int available_vCPUs[2];
     int executed_tasks;
     int maintenance_tasks;
@@ -43,11 +47,11 @@ typedef struct server_struct {
 //edge server struct
 typedef struct{
     int cpu;
-    char tas_buf[512];
-}args_cpu;
+    char task_buf[512];
+}cpu_args;
 
 //EDGE SERVER VARIABLES
-int global_edge_server_number;
+int num_edge_server;
 pthread_t cpu_threads[2];
 
 typedef struct{
@@ -55,7 +59,7 @@ typedef struct{
     int msg_content;
 } msg;
 
-typedef struct shm_struct {
+typedef struct{
     //configuration variables
     int num_slots; //Número de slots na fila interna do Task Manager
     int max_wtime; //Tempo máximo para que o processo Monitor eleve o nível de performance dos Edge Servers
@@ -75,6 +79,7 @@ typedef struct shm_struct {
     pthread_condattr_t attr_cond;
     pthread_cond_t edge_server_sig;
 
+    pthread_cond_t edge_server_move;
 
     //task manager queue
     int node_number;
@@ -99,9 +104,9 @@ typedef struct shm_struct {
 //shared memory variables
 int shm_id;
 Data* Shared_Memory;
-Edge_Server* edge_server_lists;
+Edge_Server* edge_servers;
 
-typedef struct task_struct {
+typedef struct{
     int num_pedidos;
     int time_betw_tasks;
     int num_tasks;
@@ -109,18 +114,15 @@ typedef struct task_struct {
     int ID;
 } Task;
 
-
-
 sem_t * mutex_log;
 sem_t * mutex_write;
 int shmid;
 
 //task manager header
-
 typedef struct{
     int id_node;
     int priority;
-    int num_instructions:
+    int num_instructions;
     int timeout;
     struct tm arrive_time;
     struct Node* next_node;
@@ -134,69 +136,45 @@ typedef struct{
 int node_id;
 linked_list *msg_stack;
 
-
-pid_t *edge_servers_processes;
+pid_t *edge_servers_proc;
 int named_pipe_file;
 pthread_t tm_threads[2];
-int readFile();
-
-void initSim();
-
-int error(char* title, char* message);
-
-void addLog(char* mensagem);
-
-/* Edge Server functions */
-int EdgeServer(int edge_server_number);
-void* vCPU(void* args);
-void* endMonitor();
-void doMaintenance(pid_t es_pid);
 
 
 /* System Manager functions  */
-
-int init(char* file_name)
+int readFile(char* file_name);
 int SystemManager(char* file);
-int check_regex(char *text, char *regex);
+int initProc(void (*function)());
+
+/* Edge Server functions */
+int EdgeServer(int edge_server_number);
 
 /* Task Manager functions */
 
-//linked list
-void insert(linked_list** lista, int priority, int num_instructions, int timeout);
-int remove(linked_list** lista,int id_node);
-void checkPriorities(linked_list** lista);
-void getNextTask(linked_list **lista, Node** next_task);
-void clean(linked_list** lista);
-
 //Process
-int TaskManager();
+void TaskManager();
 void end_sig_tm();
-void* scheduler();
-void* dispatcher();
-void* endMonitorTM();
-
-void check_cpus(Node *next_task, int **flag, int **pipe_to_send);
-int try_to_send(Node *next_task);
-int time_since_arrive(Node *task);
 
 void thread_cleanup(void* arg);
 
 /* Monitor functions */
 pthread_t monitor_end;
 
-int Monitor();
+void Monitor();
 void *MonitorWork();
 void thread_cleanup_monitor(void* arg);
 
 /* Maintenance Manager functions */
-int MaintenanceManager();
-pid_t* list_pids;
-void sigint_maintenance();
-
+void MaintenanceManager();
 //Maintenance and Dispatcher
-pthread_cond_t edge_server_move;
+
 
 /* main functions */
-void cleanup();
-void sigint();
-void sigtstp();
+void clean();
+int closeAll();
+
+int error(char* title, char* message);
+
+
+void addLog(char* mensagem);
+
