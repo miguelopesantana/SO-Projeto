@@ -36,11 +36,11 @@ void TaskManager(){
     msg_stack->first_task = NULL;
 
 
-    // //Dispatcher Thread
-    // pthread_create(&tm_threads[1], NULL, dispatcher, 0);
+    //Dispatcher Thread
+    pthread_create(&tm_threads[1], NULL, dispatcher, 0);
 
-    // //Schedular Thread
-    // pthread_create(&tm_threads[0], NULL, scheduler, 0);
+    //Schedular Thread
+    pthread_create(&tm_threads[0], NULL, scheduler, 0);
 
     //condicao variavel à espera que o system acabe
     endSystem();
@@ -59,7 +59,7 @@ void *scheduler(){
 
 void endSystemSignal(){
     char buffer[512];
-    Task* aux = msg_stack->first_task;
+    Ltask* aux = msg_stack->first_task;
 
     addLog("Cleaning up Task Manager");
 
@@ -71,7 +71,7 @@ void endSystemSignal(){
     // Escrever no log as mensagens que restam na fila do sheduler
     sem_wait(Shared_Memory->shm_write);
     while(aux != NULL){
-        snprintf(buffer,sizeof(buffer),"Task %d undone",aux->task_id);
+        snprintf(buffer,sizeof(buffer),"Task %d undone",aux->taskID);
         addLog(buffer);
         aux = aux->next_task;
         Shared_Memory->non_executed_tasks++;
@@ -121,8 +121,8 @@ void insertTask(task_list **list, int priority, int num_instructions, int timeou
     time_t now;
 
     // Create new node
-    Task *new_task =(Task *)malloc(sizeof(Task));
-    new_task->task_id = task_counter++;
+    Ltask *new_task =(Ltask *)malloc(sizeof(Ltask));
+    new_task->taskID = task_counter++;
     new_task->priority = priority;
     new_task->num_instructions = num_instructions;
     new_task->timeout = timeout;
@@ -131,7 +131,7 @@ void insertTask(task_list **list, int priority, int num_instructions, int timeou
     time(&now);
     localtime_r(&now, &new_task->arrive_time);
 
-    Task *aux = (*list)->first_task;
+    Ltask *aux = (*list)->first_task;
 
     if (aux == NULL){
         (*list)->first_task = new_task;
@@ -150,10 +150,10 @@ void insertTask(task_list **list, int priority, int num_instructions, int timeou
 
 int removeTask(task_list **list, int task_id){
 
-    Task *aux = (*list)->first_task;
+    Ltask *aux = (*list)->first_task;
 
     // Verificar se é primeiro nó
-    if (aux->task_id == task_id){
+    if (aux->taskID == task_id){
 
         (*list)->first_task = aux->next_task;
         free(aux);
@@ -161,7 +161,7 @@ int removeTask(task_list **list, int task_id){
         return 0;
     }else{ // Se não é o primeiro nó
 
-        while ((aux->next_task != NULL) && (aux->next_task->task_id != task_id)){
+        while ((aux->next_task != NULL) && (aux->next_task->taskID != task_id)){
             aux = aux->next_task;
         }
 
@@ -170,8 +170,8 @@ int removeTask(task_list **list, int task_id){
             return 1;
         }else{
             
-            Task *delete = aux->next_task;
-            aux->next_task = aux->next_task->next_task;
+            Ltask *delete = aux->next_task;
+            aux->next_task = aux->next_task;
             free(delete);
             Shared_Memory->task_number--;
 

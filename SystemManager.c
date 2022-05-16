@@ -2,20 +2,12 @@
 
 int main(int argc, char *argv[]){
 
-    //Block CTRL+c and CTRL+z during initialization
-    //Todo block all signals, after init resume only CTRL+c and CTRL+z
-    
-    // signal(SIGINT, SIG_IGN);
-
     if(argc == 2)
         SystemManager(argv[1]);
     else{
         error("SYSTEM MANAGER COMMAND", "Command structure error\n");
         return 1;
     }
-
-    //Redirect CTRL+c and CTRL+z
-    // signal(SIGINT,closeAll);
 
     return 0;
 }
@@ -76,20 +68,18 @@ int readFile(char* file_name){
         exit(1);
     }
 
-    //create the shared memory
-    if((shmid = shmget(IPC_PRIVATE, sizeof(Data) + sizeof(Edge_Server)*Shared_Memory -> num_servers, IPC_CREAT | 0700)) < 1){
+    if((shm_id = shmget(IPC_PRIVATE, sizeof(Data) + sizeof(Edge_Server)*Shared_Memory -> num_servers, IPC_CREAT | 0700)) < 1){
         addLog("ERROR CREATING SHARED MEMORY!");
         exit(1);
     }
 
-    Shared_Memory = (Data*) shmat(shmid, NULL, 0);
+    Shared_Memory = (Data*) shmat(shm_id, NULL, 0);
     if(Shared_Memory < (Data*) 1){
         addLog("ERROR ATTACHING SHARED MEMORY!");
         exit(1);
     }
 
-    //put edge_servers on shared memory
-    //read properties for each edge server
+
     edge_servers = (Edge_Server*) (Shared_Memory + 1);
 
     bool erro = false;
@@ -136,8 +126,8 @@ int SystemManager(char* file){
 
 
     // Create semaphores
-    sem_unlink("LOG_WRITE_MUTEX");
-    Shared_Memory->log_write_mutex = sem_open("LOG_WRITE_MUTEX", O_CREAT | O_EXCL, 0700, 1);
+    sem_unlink("MUTEX_LOG");
+    Shared_Memory->mutex_log = sem_open("MUTEX_LOG", O_CREAT | O_EXCL, 0700, 1);
     sem_unlink("SHM_WRITE");
     Shared_Memory->shm_write = sem_open("SHM_WRITE", O_CREAT | O_EXCL, 0700, 1);
     sem_unlink("SHM_CHECK_PFM");
@@ -145,7 +135,6 @@ int SystemManager(char* file){
 
 
     // Pthreads
-
     pthread_mutex_init(&Shared_Memory->shm_servers, &Shared_Memory->attr_mutex);
     pthread_cond_init(&Shared_Memory->new_task_cond,&Shared_Memory->attr_cond);
     pthread_cond_init(&Shared_Memory->end_system_signal,&Shared_Memory->attr_cond);
@@ -161,7 +150,7 @@ int SystemManager(char* file){
     addLog("Task pipe created");
 
     //Monitor
-    if ((Shared_Memory->child_pids[0] = initProc(Monitor)) == 0){
+    if ((Shared_Memory->procIDs[0] = initProc(Monitor)) == 0){
         addLog("Monitor created");
     }else{
         addLog("Error creating Monitor process. Closing program...");
@@ -170,7 +159,7 @@ int SystemManager(char* file){
     }
 
     //Task Manager
-    if ((Shared_Memory->child_pids[1] = initProc(TaskManager)) == 0){
+    if ((Shared_Memory->procIDs[1] = initProc(TaskManager)) == 0){
         addLog("Task Manager created");
     }else{
         addLog("Error creating Monitor process. Closing program...");
@@ -179,7 +168,7 @@ int SystemManager(char* file){
     }
 
     //Maintenance Manager
-    if ((Shared_Memory->child_pids[2] = initProc(MaintenanceManager)) == 0){
+    if ((Shared_Memory->procIDs[2] = initProc(MaintenanceManager)) == 0){
         addLog("Maintenance Manager created");
     }else{
         addLog("Error creating Monitor process. Closing program...");
@@ -204,18 +193,11 @@ int initProc(void (*function)()){
     }
 }
 
-
-
-
 void clean(){
     
     //sinal para avisar os processos que é para terminar
     pthread_cond_broadcast(&Shared_Memory->end_system_signal);
 
-    //Espera aqui, só pode fechar a shared memory quando todos os outros processos fecharem
-    //for(int i = 0; i<3; i++){
-    //    wait(NULL);
-    //}
     int wait_status;
     while((wait_status = wait(NULL)) > 0 || (wait_status == -1 && errno == EINTR));
 
@@ -227,25 +209,21 @@ void clean(){
 
     pthread_cond_destroy(&Shared_Memory->edge_server_sig);
     pthread_cond_destroy(&Shared_Memory->end_system_signal);
-    //pthread_cond_destroy(&Shared_Memory->new_task_cond);
-    //pthread_cond_destroy(&Shared_Memory->edge_server_move);
-    //pthread_condattr_destroy(&Shared_Memory->attr_cond);
     
     pthread_mutex_destroy(&Shared_Memory->shm_servers);
     pthread_mutex_destroy(&Shared_Memory->t_queue_sem);
-    //pthread_mutexattr_destroy(&Shared_Memory->attr_mutex);
 
 }
 
-//CLOSING SYSTEM
+// CLOSING SYSTEM
 int closeAll(){
 
     addLog("Closing System Manager and cleaning everything");
     clean();
 
     //close log sem
-    sem_unlink("LOG_WRITE_MUTEX");
-    sem_close(Shared_Memory->log_write_mutex);
+    sem_unlink("MUTEX_LOG");
+    sem_close(Shared_Memory->mutex_log);
 
     //shared memory
     shmdt(Shared_Memory);
@@ -253,10 +231,6 @@ int closeAll(){
 
     //close after, to keep the log file updated
     return 0;
-}
-
-void thread_cleanup(void *arg){
-    pthread_mutex_unlock(&Shared_Memory->t_queue_sem);
 }
 
 
