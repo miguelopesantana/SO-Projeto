@@ -76,8 +76,6 @@ int generate_request(int num_instructions, int timeout){
     return 0;
 }
 
-
-
 int error(char *title, char *message){
     printf("[ERROR] %s: %s\n", title, message);
     return 1;

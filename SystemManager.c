@@ -30,7 +30,6 @@ int main(int argc, char *argv[]){
     return 0;
 }
 
-
 void clean(){
     
     //sinal para avisar os processos que é para terminar
@@ -131,56 +130,7 @@ void sigtstp(){
 
 }
 
-// Função Task Manager
 
-int TaskManager(){
-    
-    //open unnamed pipes
-    int flags;
-    for(int i = 0; i < Shared_Memory->num_servers; i++){
-        pipe(edge_server_lists[i].pipe);
-
-        //set read for non-blockinng mode
-        flags = fcntl(edge_server_lists[i].pipe[0], F_GETFL, 0);
-        fcntl(edge_server_lists[i].pipe[0], F_SETFL, flags | O_NONBLOCK);
-    }
-
-    edge_servers_processes = malloc(sizeof(pid_t) * (Shared_Memory->num_servers));
-
-    //Start Edge Servers
-    for(int i = 0; i < Shared_Memory->num_servers; i++){
-        if((edge_servers_processes[i] = fork()) == 0){
-            EdgeServer(i);
-            exit(0);
-        }
-    }
-
-    //open named pipe for reading
-    if((named_pipe_file = open(PIPE_NAME, O_RDWR)) < 0){
-        addLog("Cannot open pipe");
-        end_sig_tm();
-        exit(1);
-    }
-    addLog("Task pipe opened");
-
-    //create message queue
-    node_id = 0;
-    msg_stack = (linked_list *)malloc(sizeof(linked_list));
-    Shared_Memory->node_number = 0
-    msg_stack->first_node = NULL;
-
-
-    //Dispatcher Thread
-    pthread_create(&tm_threads[1], NULL, dispatcher, 0);
-
-    //Schedular Thread
-    pthread_create(&tm_threads[0], NULL, scheduler, 0);
-
-    //condiçao variável à espera que o system acabe
-    endMonitorTM();
-
-    return 0;
-}
 
 
 void *scheduler(){
@@ -301,8 +251,6 @@ void *scheduler(){
         }
     }
     pthread_exit(NULL);
-    
-
 }
 
 void *dispatcher(){
@@ -622,145 +570,15 @@ void thread_cleanup(void *arg){
     pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
 }
 
-// --------------------------Função Maintenance Manager----------------------------------
-int MaintenanceManager(){
-    signal(SIGINT,maintenance_sigint);
-    pids_list = malloc(sizeof(pid_t) * Shared_Memory->num_servers);
-    int server_to_maintenance;
-    msg work_msg;
-    char buf[512];
-    
-    //receber informação do servidor dizendo que está a trabalhar
-    for(int i = 0; i < Shared_Memory->num_servers; i++){
-        //ler msg da msg queue
-        msgrcv(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), i+1, 0);
-        pids_list[i] = work_msg.msg_content;
-    }
 
-    addLog("MAINTENANCE MANAGER: ALL EDGE SERVERS READY TO WORK");
 
-    //work
-    while(1){
-        //sleep
-        sleep(1 + rand()%5);
 
-        server_to_maintenance = rand()%Shared_Memory->num_servers;
-
-        //prepare message
-
-        work_message-msgtype = pids_list[server_to_maintenance];
-        work_msg.msg_content = 0;
-
-        //write na MQ
-        snprintf(buf, sizeof(buf), "Sending Edge Server %d to maintenance", server_to_maintenance);
-        addLog(buf);
-        msgsnd(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), 0);
-
-        //warn edge server
-        pthread_cond_broadcast(&Shared_Memory->edge_server_move);
-
-        //wait for edge server saying is ready for maintenance
-        msgrcv(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), pids_list[server_to_maintenance] + 50, 0);
-
-        //do maintenance
-        sleep(1 + rand()%5);
-
-        //return to edge server saying that it can continue working normally
-        work_msg.msg_content = 0;
-        work_msg.msg_type = pids_list[server_to_maintenance];
-        msgsnd(Shared_Memory->msgqid, &work_msg, sizeof(work_msg) - sizeof(long), 0);
-    }
-
-    free(pids_list);
-
-    return 0;
-
-}
-
-void maintenance_sigint(){
-    free(pids_list);
-    exit(0);
-}
-
-// ----------------------------Função Monitor---------------------------------------
-int workMonitor(){
-    
-    pthread_cleanup_push(thread_cleanup_monitor, NULL);
-
-    while(1){
-        //recebe o sinal da thread quando é colocada uma tarefa na fila
-        pthread_mutex_lock(&Shared_Memory->sem_tm_queue);
-
-        pthread_cond_wait(&Shared_Memory->new_task_cond,&Shared_Memory->sem_tm_queue);
-
-        //printf("check monitor %d %d %f\n", SMV->node_number,SMV->QUEUE_POS, (double)SMV->node_number/ (double)SMV->QUEUE_POS);
-        sem_wait(&Shared_Memory->check_performance_mode);
-
-        if( (Shared_Memory->performance_mode == 1) && (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots > 0.8){ //se a fila está ocupada a >80%
-
-            write_screen_log("Queue almost full: Changing performance mode to 2");
-
-            sem_wait(Shared_Memory->check_performance_mode);
-            Shared_Memory->performance_mode = 2;
-
-            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
-            for(int i = 0;i< Shared_Memory->num_servers; i++){
-                edge_server_lists[i].available_vCPUs[1] = 1;
-            }
-            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
-
-        }
-
-        if( (Shared_Memory->performance_mode == 2) && ( (double)Shared_Memory->node_number/ (double)Shared_Memory->num_slots < 0.2) ){ //caiu para 20% ocupação
-
-            addLog("Changing performance mode to 1: Power saving");
-
-            Shared_Memory->performance_mode = 1;
-
-            pthread_mutex_lock(&Shared_Memory->shm_edge_servers);
-            for(int i = 0;i< Shared_Memory->num_servers; i++){
-                edge_server_lists[i].available_vCPUs[1] = 0;
-            }
-            pthread_mutex_unlock(&Shared_Memory->shm_edge_servers);
-        }
-
-        sem_post(Shared_Memory->check_performance_mode);
-
-        pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
-
-    }
-    pthread_cleanup_pop(0);
-
-    pthread_exit(NULL);
-
-}
 
 void thread_cleanup_monitor(void* arg){
     pthread_mutex_unlock(&Shared_Memory->sem_tm_queue);
 }
 
-int Monitor(){
-    //signal (SIGINT, SIG_DFL);
-    pthread_t work_monitor_thread;
-    pthread_create(&work_monitor_thread,NULL,workMonitor,NULL);
-    pthread_detach(work_monitor_thread);
 
-    //Wait for end signal
-    pthread_mutex_t aux = PTHREAD_MUTEX_INITIALIZER; 
-    pthread_mutex_lock(&aux);
-
-    pthread_cond_wait(&SMV->end_system_sig,&aux);
-
-    //garantir que o semaforo da condicao que vamos cancelar está unlocked
-    //pthread_mutex_unlock(&SMV->sem_tm_queue);
-
-    pthread_cancel(work_monitor_thread);
-
-    pthread_mutex_unlock(&aux);
-    pthread_mutex_destroy(&aux);
-
-    exit(0);
-}
 //----------------------------System Manager--------------------------------------
 
 int SystemManager(char* file){

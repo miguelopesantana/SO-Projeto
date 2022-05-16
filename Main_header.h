@@ -10,22 +10,17 @@
 #include <time.h>
 #include <pthread.h>
 #include <sys/fcntl.h>
-#include "functions.c"
+#include "SystemManager_functions.c"
+#include "SystemManager.c"
+#include "TaskManager.c"
+#include "EdgeServer.c"
+#include "Monitor.c"
+#include "MaintenanceManager.c"
 
 #define MIN_LEN 64
 #define MAX_LEN 1024
 #define PIPE_NAME "TASK_PIPE"
 #define BUF_PIPE 512
-
-int readFile();
-
-void initSim();
-
-int error(char* title, char* message);
-
-void addLog(char* mensagem);
-
-
 
 //struct with server's information
 typedef struct server_struct {
@@ -140,18 +135,22 @@ int node_id;
 linked_list *msg_stack;
 
 
-
 pid_t *edge_servers_processes;
 int named_pipe_file;
 pthread_t tm_threads[2];
+int readFile();
+
+void initSim();
+
+int error(char* title, char* message);
+
+void addLog(char* mensagem);
 
 /* Edge Server functions */
 int EdgeServer(int edge_server_number);
 void* vCPU(void* args);
 void* endMonitor();
 void doMaintenance(pid_t es_pid);
-
-
 
 
 /* System Manager functions  */
@@ -188,7 +187,6 @@ pthread_t monitor_end;
 int Monitor();
 void *MonitorWork();
 void thread_cleanup_monitor(void* arg);
-
 
 /* Maintenance Manager functions */
 int MaintenanceManager();

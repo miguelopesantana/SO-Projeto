@@ -1,20 +1,34 @@
 CC = gcc
 FLAGS = -Wall -g -pthread
-OBJS = SystemManager.o functions.o MobileNode.o
-PROG = server
 
-all: 	${PROG}
+SERVER = offloading
+SOBJS = SystemManager.o TaskManager.o EdgeServer.o Monitor.o
 
-clean:
-	rm ${OBJS} *- ${PROG}
+CLIENT = mobile_node
+COBJS = MobileNode.o
 
-${PROG}:	${OBJS}
-		${CC} ${FLAGS} ${OBJS} -o $@
+all: ${SERVER}
+all: ${CLIENT}
+
+cleans:
+		rm ${SOBJS} *~ ${SERVER}
+		
+cleanc:
+		rm ${COBJS} *~ ${CLIENT}
+
+${SERVER}:	${SOBJS}
+		${CC} ${FLAGS} ${SOBJS} -lm -o $@
+
+${CLIENT}:	${COBJS}
+		${CC} ${FLAGS} ${COBJS} -lm -o $@		
 
 .c.o:
 		${CC} ${FLAGS} $< -c -o $@
 
 ######################
-main.o: udp_adminServer.c server_header.h
-functions.o: functions.c server_header.h
-main: udp_adminServer.o functions.o
+SystemManager.o: SystemManager.c Main_header.h
+TaskManager.o: TaskManager.c Main_header.h
+EdgeServer.o: EdgeServer.c Main_header.h
+Monitor.o: Monitor.c Main_header.h
+MaintenanceManager.o: MaintenanceManager.c Main_header.h
+MobileNode.o: MobileNode.o MobileNode_header.h
