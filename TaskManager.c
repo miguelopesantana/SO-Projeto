@@ -9,9 +9,6 @@ void TaskManager(){
     for(int i = 0; i < Shared_Memory->num_servers; i++){
         pipe(edge_servers[i].pipe);
 
-        //set read for non-blockinng mode
-        flags = fcntl(edge_servers[i].pipe[0], F_GETFL, 0);
-        fcntl(edge_servers[i].pipe[0], F_SETFL, flags | O_NONBLOCK);
     }
 
     edge_servers_proc = malloc(sizeof(pid_t) * (Shared_Memory->num_servers));
@@ -27,22 +24,35 @@ void TaskManager(){
     //open named pipe for reading
     if((named_pipe_file = open(PIPE_NAME, O_RDWR)) < 0){
         addLog("Cannot open pipe");
-        // end_sig_tm();
+        endSystemSignal();
         exit(1);
     }
     addLog("Task pipe opened");
+
+    //criar message queue
+    task_counter = 0;
+    msg_stack = (task_list*)malloc(sizeof(task_list));
+    Shared_Memory->task_number = 0;
+    msg_stack->first_task = NULL;
+
 
     // //Dispatcher Thread
     // pthread_create(&tm_threads[1], NULL, dispatcher, 0);
 
     // //Schedular Thread
     // pthread_create(&tm_threads[0], NULL, scheduler, 0);
+
+    //condicao variavel à espera que o system acabe
+    endSystem();
+
 }
 
+//thread dispatcher
 void *dispatcher(){
     
 }
 
+//thread sheduler
 void *scheduler(){
 
 }
@@ -53,15 +63,15 @@ void endSystemSignal(){
 
     addLog("Cleaning up Task Manager");
 
-    // CLOSE THREADS
+    // fechar as threads scheduler e dispatcher
     pthread_cancel(tm_threads[0]);
     pthread_cancel(tm_threads[1]);
 
 
-    // ESCREVER NO LOG AS MENSAGENS QUE RESTA NA FILA DO SCHEDULER
+    // Escrever no log as mensagens que restam na fila do sheduler
     sem_wait(Shared_Memory->shm_write);
     while(aux != NULL){
-        snprintf(buffer,sizeof(buffer),"TASK %d LEFT UNDONE",aux->task_id);
+        snprintf(buffer,sizeof(buffer),"Task %d undone",aux->task_id);
         addLog(buffer);
         aux = aux->next_task;
         Shared_Memory->non_executed_tasks++;
